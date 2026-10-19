@@ -162,17 +162,21 @@ HTML_TEMPLATE = """
             flex: 1; 
             overflow-y: auto; 
             padding: 15px; 
-            padding-bottom: 75px;
+            padding-bottom: 85px;
             display: flex; 
             flex-direction: column; 
             gap: 10px; 
             -webkit-overflow-scrolling: touch; 
         }
         
-        .message { max-width: 80%; padding: 10px 14px; border-radius: 14px; line-height: 1.4; word-wrap: break-word; font-size: 15px; }
+        .message { max-width: 80%; padding: 8px 12px; border-radius: 14px; line-height: 1.4; word-wrap: break-word; font-size: 15px; position: relative; }
         .msg-me { background: #1F6AA5; align-self: flex-end; border-bottom-right-radius: 2px; }
         .msg-other { background: #2a2a2a; align-self: flex-start; border-bottom-left-radius: 2px; }
-        .msg-sender { font-size: 11px; opacity: 0.6; margin-bottom: 3px; font-weight: bold; }
+        .msg-sender { font-size: 11px; font-weight: bold; margin-bottom: 4px; color: #82b1ff; }
+        .msg-me .msg-sender { color: #e0e0e0; text-align: right; }
+        .msg-img-preview { max-width: 100%; max-height: 250px; border-radius: 8px; margin-top: 5px; cursor: pointer; object-fit: cover; }
+
+        #typing-indicator { font-size: 12px; color: #888; font-style: italic; padding: 0 15px 5px 15px; height: 18px; }
 
         footer { 
             position: absolute;
@@ -273,6 +277,7 @@ HTML_TEMPLATE = """
             </header>
 
             <div class="chat-container" id="messages"></div>
+            <div id="typing-indicator"></div>
 
             <footer>
                 <label class="file-btn" title="Прикрепить файл">
@@ -280,7 +285,7 @@ HTML_TEMPLATE = """
                     <input type="file" id="file-input" style="display:none;" onchange="sendFile()">
                 </label>
                 <button id="voice-record-btn" class="voice-btn" onclick="toggleVoiceRecord()" title="Голосовое сообщение">🎤</button>
-                <input type="text" id="msg-input" placeholder="Сообщение..." onkeypress="if(event.key==='Enter') sendMsg()">
+                <input type="text" id="msg-input" placeholder="Сообщение..." oninput="handleTyping()" onkeypress="if(event.key==='Enter') sendMsg()">
                 <button onclick="sendMsg()">></button>
             </footer>
         </div>
@@ -324,6 +329,24 @@ HTML_TEMPLATE = """
         let mediaRecorder = null;
         let audioChunks = [];
         let isRecording = false;
+        let typingTimeout = null;
+
+        // Генерация и проигрывание короткого звука нового сообщения
+        function playNotifySound() {
+            try {
+                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(587.33, ctx.currentTime);
+                gain.gain.setValueAtTime(0.1, ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.00001, ctx.currentTime + 0.2);
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.start();
+                osc.stop(ctx.currentTime + 0.2);
+            } catch(e) {}
+        }
 
         const msgInput = document.getElementById('msg-input');
         
@@ -333,6 +356,26 @@ HTML_TEMPLATE = """
                 const box = document.getElementById('messages');
                 box.scrollTop = box.scrollHeight;
             }, 300);
+        });
+
+        function handleTyping() {
+            socket.emit('typing', { sender: currentUser, target: currentTarget });
+            clearTimeout(typingTimeout);
+            typingTimeout = setTimeout(() => {
+                socket.emit('stop_typing', { sender: currentUser, target: currentTarget });
+            }, 1500);
+        }
+
+        socket.on('user_typing', (data) => {
+            if (data.target === currentTarget && data.sender !== currentUser) {
+                document.getElementById('typing-indicator').innerText = data.sender + ' печатает...';
+            }
+        });
+
+        socket.on('user_stop_typing', (data) => {
+            if (data.target === currentTarget) {
+                document.getElementById('typing-indicator').innerText = '';
+            }
         });
 
         window.addEventListener('DOMContentLoaded', () => {
@@ -396,6 +439,7 @@ HTML_TEMPLATE = """
             currentTarget = target;
             document.getElementById('chat-title').innerText = target;
             document.getElementById('messages').innerHTML = '';
+            document.getElementById('typing-indicator').innerText = '';
             
             if (window.innerWidth <= 600) {
                 document.getElementById('sidebar').classList.add('hidden');
@@ -426,6 +470,7 @@ HTML_TEMPLATE = """
                 msg_type: 'text'
             });
             msgInput.value = '';
+            socket.emit('stop_typing', { sender: currentUser, target: currentTarget });
         }
 
         function sendFile() {
@@ -491,6 +536,9 @@ HTML_TEMPLATE = """
 
             if (isGroupMsg || isDirectMsg) {
                 appendMessage(data.sender, data.msg, data.msg_type);
+                if (data.sender !== currentUser) {
+                    playNotifySound();
+                }
             }
         });
 
@@ -562,13 +610,19 @@ HTML_TEMPLATE = """
             if (msgType === 'file') {
                 try {
                     const fileData = JSON.parse(text);
-                    contentHtml = `<a href="data:application/octet-stream;base64,${fileData.data}" download="${fileData.name}" style="color:#fff; text-decoration:underline;">📁 ${fileData.name}</a>`;
+                    const ext = fileData.name.split('.').pop().toLowerCase();
+                    if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext)) {
+                        contentHtml = `<div>📁 ${fileData.name}</div><img src="data:image/${ext};base64,${fileData.data}" class="msg-img-preview" onclick="window.open(this.src)">`;
+                    } else {
+                        contentHtml = `<a href="data:application/octet-stream;base64,${fileData.data}" download="${fileData.name}" style="color:#fff; text-decoration:underline;">📁 ${fileData.name}</a>`;
+                    }
                 } catch(e) { contentHtml = '[Файл]'; }
             } else if (msgType === 'voice') {
                 contentHtml = `<audio controls src="data:audio/webm;base64,${text}" style="max-width:200px; height:36px;"></audio>`;
             }
 
-            div.innerHTML = `<div class="msg-sender">${sender}</div>${contentHtml}`;
+            const senderTag = isMe ? 'Вы' : sender;
+            div.innerHTML = `<div class="msg-sender">${senderTag}</div>${contentHtml}`;
             box.appendChild(div);
             box.scrollTop = box.scrollHeight;
         }
@@ -646,6 +700,14 @@ HTML_TEMPLATE = """
 @app.route('/')
 def index():
     return render_template_string(HTML_TEMPLATE)
+
+@socketio.on('typing')
+def on_typing(data):
+    emit('user_typing', data, broadcast=True)
+
+@socketio.on('stop_typing')
+def on_stop_typing(data):
+    emit('user_stop_typing', data, broadcast=True)
 
 @socketio.on('register')
 def on_register(data):
