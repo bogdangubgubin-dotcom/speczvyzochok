@@ -2,6 +2,7 @@ import os
 import sqlite3
 import hashlib
 import time
+import json
 import psutil
 from flask import Flask, render_template_string
 from flask_socketio import SocketIO, emit, join_room, leave_room
@@ -13,7 +14,8 @@ socketio = SocketIO(app, cors_allowed_origins="*", async_mode=None)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, "messenger.db")
 
-ADMIN_PASSWORD_HASH = hashlib.sha256('12345'.encode('utf-8')).hexdigest()
+# Пароль администратора: 1234
+ADMIN_PASSWORD_HASH = hashlib.sha256('1234'.encode('utf-8')).hexdigest()
 
 def get_db():
     return sqlite3.connect(DB_PATH, timeout=10)
@@ -41,10 +43,17 @@ def init_db():
         CREATE TABLE IF NOT EXISTS channels (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT UNIQUE NOT NULL,
-            creator TEXT NOT NULL
+            creator TEXT NOT NULL,
+            members TEXT DEFAULT ''
         )
     """)
-    cur.execute("INSERT OR IGNORE INTO channels (name, creator) VALUES ('#general', 'system')")
+    
+    cur.execute("PRAGMA table_info(channels)")
+    ch_columns = [column[1] for column in cur.fetchall()]
+    if 'members' not in ch_columns:
+        cur.execute("ALTER TABLE channels ADD COLUMN members TEXT DEFAULT ''")
+
+    cur.execute("INSERT OR IGNORE INTO channels (name, creator, members) VALUES ('#general', 'system', '')")
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS messages (
@@ -97,7 +106,7 @@ HTML_TEMPLATE = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, interactive-widget=resizes-content">
-    <title>PyChat Mobile & Admin</title>
+    <title>Спецзвязочок</title>
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
@@ -216,10 +225,13 @@ HTML_TEMPLATE = """
         .logout-btn { background: transparent; border: 1px solid #555; color: #aaa; padding: 4px 8px; font-size: 12px; border-radius: 6px; cursor: pointer; }
         .admin-nav-btn { background: #d32f2f; color: #fff; padding: 6px 10px; font-size: 12px; border-radius: 6px; border: none; font-weight: bold; cursor: pointer; display: none; }
 
-        #admin-modal { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100dvh; background: rgba(0,0,0,0.85); z-index: 1000; justify-content: center; align-items: center; padding: 15px; }
-        .admin-box { background: #1e1e1e; border: 1px solid #333; border-radius: 12px; width: 100%; max-width: 600px; max-height: 90vh; display: flex; flex-direction: column; overflow: hidden; }
-        .admin-header { padding: 15px; background: #252525; border-bottom: 1px solid #333; display: flex; justify-content: space-between; align-items: center; }
-        .admin-content { padding: 15px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 15px; }
+        .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100dvh; background: rgba(0,0,0,0.85); z-index: 1000; justify-content: center; align-items: center; padding: 15px; }
+        .modal-box { background: #1e1e1e; border: 1px solid #333; border-radius: 12px; width: 100%; max-width: 450px; max-height: 90vh; display: flex; flex-direction: column; overflow: hidden; }
+        .modal-header { padding: 15px; background: #252525; border-bottom: 1px solid #333; display: flex; justify-content: space-between; align-items: center; }
+        .modal-body { padding: 15px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 12px; }
+        .user-checkbox-item { display: flex; align-items: center; gap: 10px; background: #2a2a2a; padding: 8px 12px; border-radius: 8px; font-size: 14px; cursor: pointer; }
+
+        .admin-box { max-width: 600px; }
         .admin-card { background: #2a2a2a; padding: 12px; border-radius: 8px; }
         .admin-card h4 { margin-bottom: 8px; color: #3B8ED0; font-size: 14px; }
         .admin-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 5px; }
@@ -237,7 +249,7 @@ HTML_TEMPLATE = """
 
     <div id="auth-screen">
         <div class="auth-box">
-            <h2>PyChat Mobile</h2>
+            <h2>Спецзвязочок</h2>
             <input type="text" id="username" placeholder="Логин">
             <input type="password" id="password" placeholder="Пароль">
             <button onclick="login()">Войти</button>
@@ -254,12 +266,12 @@ HTML_TEMPLATE = """
             </div>
             <div class="chat-list">
                 <div class="section-title">
-                    Группы
-                    <span style="cursor:pointer; font-size:16px;" onclick="createChannel()">+</span>
+                    Группы / Каналы
+                    <span style="cursor:pointer; font-size:18px; font-weight:bold; color:#3B8ED0;" onclick="openCreateGroupModal()">+</span>
                 </div>
                 <div id="channels-list"></div>
 
-                <div class="section-title">Чаты</div>
+                <div class="section-title">Личные чаты</div>
                 <div id="users-list"></div>
             </div>
         </div>
@@ -291,13 +303,28 @@ HTML_TEMPLATE = """
         </div>
     </div>
 
-    <div id="admin-modal">
-        <div class="admin-box">
-            <div class="admin-header">
+    <div id="create-group-modal" class="modal-overlay">
+        <div class="modal-box">
+            <div class="modal-header">
+                <h3>👥 Создать общий чат</h3>
+                <button onclick="closeCreateGroupModal()" style="width:auto; padding:4px 10px; margin:0; background:#444;">✕</button>
+            </div>
+            <div class="modal-body">
+                <input type="text" id="group-name-input" placeholder="Название группы (напр. #работа)">
+                <div style="font-size:12px; color:#aaa; margin-top:5px;">Выберите участников чата:</div>
+                <div id="group-users-select" style="display:flex; flex-direction:column; gap:6px; max-height:200px; overflow-y:auto;"></div>
+                <button onclick="confirmCreateGroup()" style="margin-top:10px;">Создать чат</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="admin-modal" class="modal-overlay">
+        <div class="modal-box admin-box">
+            <div class="modal-header">
                 <h3>⚙️ Панель Управления</h3>
                 <button onclick="closeAdminModal()" style="width:auto; padding:4px 10px; margin:0; background:#444;">✕</button>
             </div>
-            <div class="admin-content">
+            <div class="modal-body">
                 <div class="admin-card" id="admin-stats-card">
                     <h4>📊 Нагрузка Сервера</h4>
                     <div id="sys-stats" style="font-size:13px; line-height:1.6; color:#aaa;">Загрузка данных...</div>
@@ -330,8 +357,8 @@ HTML_TEMPLATE = """
         let audioChunks = [];
         let isRecording = false;
         let typingTimeout = null;
+        let cachedUsersList = [];
 
-        // Генерация и проигрывание короткого звука нового сообщения
         function playNotifySound() {
             try {
                 const ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -423,7 +450,7 @@ HTML_TEMPLATE = """
                     document.getElementById('admin-btn').style.display = 'block';
                 }
 
-                socket.emit('get_channels');
+                socket.emit('get_channels', { username: currentUser });
                 socket.emit('get_users');
                 switchTarget('#general');
             } else {
@@ -452,11 +479,44 @@ HTML_TEMPLATE = """
             if(activeEl) activeEl.classList.add('active');
         }
 
-        function createChannel() {
-            const name = prompt("Введите название новой группы:");
-            if (name && name.trim()) {
-                socket.emit('create_channel', { name: name.trim(), creator: currentUser });
+        function openCreateGroupModal() {
+            document.getElementById('group-name-input').value = '';
+            const container = document.getElementById('group-users-select');
+            container.innerHTML = '';
+            
+            cachedUsersList.forEach(u => {
+                if (u.username === currentUser) return;
+                const label = document.createElement('label');
+                label.className = 'user-checkbox-item';
+                label.innerHTML = `<input type="checkbox" value="${u.username}"> 👤 ${u.username}`;
+                container.appendChild(label);
+            });
+
+            document.getElementById('create-group-modal').style.display = 'flex';
+        }
+
+        function closeCreateGroupModal() {
+            document.getElementById('create-group-modal').style.display = 'none';
+        }
+
+        function confirmCreateGroup() {
+            const nameInput = document.getElementById('group-name-input').value.trim();
+            if (!nameInput) {
+                alert('Введите название группы');
+                return;
             }
+
+            const selectedUsers = [currentUser];
+            const checkboxes = document.querySelectorAll('#group-users-select input[type="checkbox"]:checked');
+            checkboxes.forEach(cb => selectedUsers.push(cb.value));
+
+            socket.emit('create_channel', { 
+                name: nameInput, 
+                creator: currentUser,
+                members: selectedUsers 
+            });
+
+            closeCreateGroupModal();
         }
 
         function sendMsg() {
@@ -578,6 +638,7 @@ HTML_TEMPLATE = """
         });
 
         socket.on('users_list', (data) => {
+            cachedUsersList = data.users;
             const box = document.getElementById('users-list');
             box.innerHTML = '';
             data.users.forEach(u => {
@@ -636,7 +697,7 @@ HTML_TEMPLATE = """
                     document.getElementById('admin-modal').style.display = 'flex';
                     socket.emit('admin_get_stats');
                     socket.emit('admin_get_users', { admin: currentUser });
-                    socket.emit('get_channels');
+                    socket.emit('get_channels', { username: currentUser });
                 } else {
                     alert('Неверный пароль администратора!');
                 }
@@ -759,13 +820,27 @@ def on_login(data):
         emit('auth_response', {'status': 'error', 'message': 'Пользователь не найден'})
 
 @socketio.on('get_channels')
-def on_get_channels():
+def on_get_channels(data=None):
+    username = data.get('username', '') if data else ''
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT name FROM channels ORDER BY id ASC")
-    channels = [r[0] for r in cur.fetchall()]
+    cur.execute("SELECT name, members FROM channels ORDER BY id ASC")
+    rows = cur.fetchall()
     conn.close()
-    emit('channels_list', {'channels': channels})
+
+    channels = []
+    for name, members_str in rows:
+        if name == '#general' or not members_str:
+            channels.append(name)
+        else:
+            try:
+                members = json.loads(members_str)
+                if username in members:
+                    channels.append(name)
+            except Exception:
+                channels.append(name)
+
+    emit('channels_list', {'channels': channels}, broadcast=True)
 
 @socketio.on('get_users')
 def on_get_users():
@@ -780,16 +855,20 @@ def on_get_users():
 def on_create_channel(data):
     name = data.get('name', '').strip()
     creator = data.get('creator', '')
+    members = data.get('members', [])
+    
     if not name.startswith('#'):
         name = '#' + name
         
+    members_json = json.dumps(members)
+
     conn = get_db()
     cur = conn.cursor()
     try:
-        cur.execute("INSERT INTO channels (name, creator) VALUES (?, ?)", (name, creator))
+        cur.execute("INSERT INTO channels (name, creator, members) VALUES (?, ?, ?)", (name, creator, members_json))
         conn.commit()
         conn.close()
-        on_get_channels()
+        on_get_channels({'username': creator})
     except sqlite3.IntegrityError:
         conn.close()
 
@@ -934,7 +1013,7 @@ def on_admin_delete_channel(data):
     cur.execute("DELETE FROM channels WHERE name = ?", (name,))
     conn.commit()
     conn.close()
-    on_get_channels()
+    on_get_channels({'username': admin})
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
