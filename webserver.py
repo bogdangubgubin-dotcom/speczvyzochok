@@ -22,7 +22,7 @@ def init_db():
     conn = get_db()
     cur = conn.cursor()
     
-    # 1. Создаем таблицу пользователей (если её не было)
+    # 1. Создаем таблицу пользователей
     cur.execute("""
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -33,7 +33,7 @@ def init_db():
         )
     """)
     
-    # 2. Проверяем наличие колонки role и добавляем её в старые БД при необходимости
+    # 2. Проверяем наличие колонки role и добавляем её при необходимости
     cur.execute("PRAGMA table_info(users)")
     columns = [column[1] for column in cur.fetchall()]
     if 'role' not in columns:
@@ -102,20 +102,20 @@ HTML_TEMPLATE = """
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, interactive-widget=resizes-content">
     <title>PyChat Mobile & Admin</title>
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-        body { background: #121212; color: #fff; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+        html, body { width: 100%; height: 100%; height: 100dvh; overflow: hidden; background: #121212; color: #fff; }
         
-        #auth-screen { display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100vh; padding: 20px; }
+        #auth-screen { display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100vh; height: 100dvh; padding: 20px; }
         .auth-box { background: #1e1e1e; padding: 25px; border-radius: 16px; width: 100%; max-width: 340px; text-align: center; border: 1px solid #2d2d2d; }
         .auth-box h2 { margin-bottom: 15px; color: #3B8ED0; }
-        input[type="text"], input[type="password"] { width: 100%; padding: 12px; margin: 8px 0; border-radius: 10px; border: 1px solid #333; background: #2a2a2a; color: #fff; outline: none; font-size: 15px; }
+        input[type="text"], input[type="password"] { width: 100%; padding: 12px; margin: 8px 0; border-radius: 10px; border: 1px solid #333; background: #2a2a2a; color: #fff; outline: none; font-size: 16px; }
         button { width: 100%; padding: 12px; margin-top: 10px; border-radius: 10px; border: none; background: #1F6AA5; color: #fff; font-weight: bold; cursor: pointer; font-size: 15px; }
         
-        #app-screen { display: none; height: 100vh; flex-direction: row; width: 100vw; }
+        #app-screen { display: none; height: 100vh; height: 100dvh; flex-direction: row; width: 100vw; position: relative; }
         
         #sidebar { width: 280px; background: #1a1a1a; border-right: 1px solid #2d2d2d; display: flex; flex-direction: column; flex-shrink: 0; }
         .sidebar-header { padding: 15px; background: #1e1e1e; border-bottom: 1px solid #2d2d2d; font-weight: bold; display: flex; justify-content: space-between; align-items: center; }
@@ -128,19 +128,19 @@ HTML_TEMPLATE = """
         .online { background: #4caf50; }
         .offline { background: #757575; }
 
-        #chat-main { flex: 1; display: flex; flex-direction: column; background: #121212; min-width: 0; }
-        header { background: #1e1e1e; padding: 12px 15px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #2d2d2d; }
+        #chat-main { flex: 1; display: flex; flex-direction: column; background: #121212; min-width: 0; height: 100%; }
+        header { background: #1e1e1e; padding: 12px 15px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #2d2d2d; flex-shrink: 0; }
         
-        .chat-container { flex: 1; overflow-y: auto; padding: 15px; display: flex; flex-direction: column; gap: 10px; }
+        .chat-container { flex: 1; overflow-y: auto; padding: 15px; display: flex; flex-direction: column; gap: 10px; -webkit-overflow-scrolling: touch; }
         .message { max-width: 80%; padding: 10px 14px; border-radius: 14px; line-height: 1.4; word-wrap: break-word; font-size: 15px; }
         .msg-me { background: #1F6AA5; align-self: flex-end; border-bottom-right-radius: 2px; }
         .msg-other { background: #2a2a2a; align-self: flex-start; border-bottom-left-radius: 2px; }
         .msg-sender { font-size: 11px; opacity: 0.6; margin-bottom: 3px; font-weight: bold; }
 
-        footer { background: #1e1e1e; padding: 10px; display: flex; gap: 8px; border-top: 1px solid #2d2d2d; align-items: center; }
+        footer { background: #1e1e1e; padding: 8px 10px; display: flex; gap: 8px; border-top: 1px solid #2d2d2d; align-items: center; flex-shrink: 0; position: sticky; bottom: 0; left: 0; right: 0; z-index: 50; }
         footer input[type="text"] { flex: 1; margin: 0; }
         footer button { width: auto; padding: 0 14px; margin: 0; height: 42px; }
-        .file-btn, .voice-btn { background: #333; border: 1px solid #444; border-radius: 10px; padding: 0 12px; height: 42px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: #fff; }
+        .file-btn, .voice-btn { background: #333; border: 1px solid #444; border-radius: 10px; padding: 0 12px; height: 42px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: #fff; flex-shrink: 0; }
         .recording { background: #c62828 !important; animation: pulse 1s infinite; }
         
         @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
@@ -149,7 +149,7 @@ HTML_TEMPLATE = """
         .admin-nav-btn { background: #d32f2f; color: #fff; padding: 6px 10px; font-size: 12px; border-radius: 6px; border: none; font-weight: bold; cursor: pointer; display: none; }
 
         /* Модальное окно Админки */
-        #admin-modal { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.85); z-index: 100; justify-content: center; align-items: center; padding: 15px; }
+        #admin-modal { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; height: 100dvh; background: rgba(0,0,0,0.85); z-index: 100; justify-content: center; align-items: center; padding: 15px; }
         .admin-box { background: #1e1e1e; border: 1px solid #333; border-radius: 12px; width: 100%; max-width: 600px; max-height: 90vh; display: flex; flex-direction: column; overflow: hidden; }
         .admin-header { padding: 15px; background: #252525; border-bottom: 1px solid #333; display: flex; justify-content: space-between; align-items: center; }
         .admin-content { padding: 15px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 15px; }
@@ -160,7 +160,7 @@ HTML_TEMPLATE = """
         .admin-btn { padding: 4px 8px; font-size: 11px; margin: 2px; width: auto; display: inline-block; border-radius: 4px; border: none; color: #fff; font-weight: bold; cursor: pointer; }
 
         @media (max-width: 600px) {
-            #sidebar { width: 100%; position: absolute; z-index: 10; height: 100vh; display: flex; }
+            #sidebar { width: 100%; position: absolute; z-index: 10; height: 100vh; height: 100dvh; display: flex; }
             #sidebar.hidden { display: none; }
             #chat-main { width: 100%; }
         }
@@ -263,6 +263,16 @@ HTML_TEMPLATE = """
         let audioChunks = [];
         let isRecording = false;
 
+        const msgInput = document.getElementById('msg-input');
+        
+        // Автоскролл вниз при открытии клавиатуры на телефонах
+        msgInput.addEventListener('focus', () => {
+            setTimeout(() => {
+                const box = document.getElementById('messages');
+                box.scrollTop = box.scrollHeight;
+            }, 300);
+        });
+
         window.addEventListener('DOMContentLoaded', () => {
             const savedUser = localStorage.getItem('pychat_user');
             const savedPass = localStorage.getItem('pychat_pass');
@@ -344,8 +354,7 @@ HTML_TEMPLATE = """
         }
 
         function sendMsg() {
-            const input = document.getElementById('msg-input');
-            const txt = input.value.trim();
+            const txt = msgInput.value.trim();
             if (!txt) return;
 
             socket.emit('send_msg', {
@@ -354,7 +363,7 @@ HTML_TEMPLATE = """
                 msg: txt,
                 msg_type: 'text'
             });
-            input.value = '';
+            msgInput.value = '';
         }
 
         function sendFile() {
@@ -754,15 +763,14 @@ def on_admin_mute(data):
     cur.execute("INSERT OR REPLACE INTO mutes (username, until) VALUES (?, ?)", (target, until))
     conn.commit()
     conn.close()
-    emit('error_msg', {'message': f'Пользователь {target} замучен!'})
-    on_admin_get_users({'admin': admin})
+    emit('error_msg', {'message': f'Пользователь {target} замучен.'})
 
 @socketio.on('admin_set_role')
 def on_admin_set_role(data):
     admin = data.get('admin')
     target = data.get('target')
-    role = data.get('role')
-
+    role = data.get('role', 'user')
+    
     if not check_admin_perm(admin, require_admin=True): return
 
     conn = get_db()
@@ -776,13 +784,13 @@ def on_admin_set_role(data):
 def on_admin_delete_user(data):
     admin = data.get('admin')
     target = data.get('target')
-
+    
     if not check_admin_perm(admin, require_admin=True): return
 
     conn = get_db()
     cur = conn.cursor()
     cur.execute("DELETE FROM users WHERE username = ?", (target,))
-    cur.execute("DELETE FROM messages WHERE sender = ? OR target = ?", (target, target))
+    cur.execute("DELETE FROM mutes WHERE username = ?", (target,))
     conn.commit()
     conn.close()
     on_admin_get_users({'admin': admin})
@@ -792,16 +800,20 @@ def on_admin_delete_user(data):
 def on_admin_delete_channel(data):
     admin = data.get('admin')
     name = data.get('name')
-
+    
     if not check_admin_perm(admin, require_admin=True): return
+
+    if name == '#general':
+        emit('error_msg', {'message': 'Нельзя удалить основной канал!'})
+        return
 
     conn = get_db()
     cur = conn.cursor()
     cur.execute("DELETE FROM channels WHERE name = ?", (name,))
-    cur.execute("DELETE FROM messages WHERE target = ?", (name,))
     conn.commit()
     conn.close()
     on_get_channels()
 
 if __name__ == '__main__':
-    socketio.run(app, host='0.0.0.0', port=5000, allow_unsafe_werkzeug=True)
+    port = int(os.environ.get('PORT', 5000))
+    socketio.run(app, host='0.0.0.0', port=port)
