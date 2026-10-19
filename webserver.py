@@ -162,7 +162,7 @@ HTML_TEMPLATE = """
             flex: 1; 
             overflow-y: auto; 
             padding: 15px; 
-            padding-bottom: 75px; /* Отступ снизу, чтобы сообщения не перекрывались фиксированным футером */
+            padding-bottom: 75px;
             display: flex; 
             flex-direction: column; 
             gap: 10px; 
@@ -327,7 +327,6 @@ HTML_TEMPLATE = """
 
         const msgInput = document.getElementById('msg-input');
         
-        // Корректная подкрутка списка при клике на поле ввода на смартфоне
         msgInput.addEventListener('focus', () => {
             setTimeout(() => {
                 window.scrollTo(0, 0);
