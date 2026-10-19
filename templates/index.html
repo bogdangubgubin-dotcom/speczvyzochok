@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <!-- Метатег для корректной работы клавиатуры на мобильных устройствах -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, interactive-widget=resizes-content">
+    <title>Мессенджер</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        html, body {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #f0f2f5;
+        }
+
+        /* Главный контейнер на весь экран с поддержкой dvh */
+        .chat-app {
+            display: flex;
+            flex-direction: column;
+            width: 100vw;
+            height: 100vh;
+            height: 100dvh; /* Динамическая высота под клавиатуру Android/iOS */
+        }
+
+        /* Шапка чата */
+        .chat-header {
+            height: 50px;
+            background-color: #075e54;
+            color: #ffffff;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 16px;
+            flex-shrink: 0;
+            font-weight: bold;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+        }
+
+        /* Область сообщений с прокруткой */
+        .messages-container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            background-color: #e5ddd5;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        .message {
+            max-width: 80%;
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-size: 15px;
+            line-height: 1.4;
+            word-wrap: break-word;
+        }
+
+        .message.incoming {
+            align-self: flex-start;
+            background-color: #ffffff;
+            color: #000000;
+        }
+
+        .message.outgoing {
+            align-self: flex-end;
+            background-color: #dcf8c6;
+            color: #000000;
+        }
+
+        /* Нижняя панель ввода сообщений */
+        .input-container {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px;
+            background-color: #f0f0f0;
+            border-top: 1px solid #ccc;
+            flex-shrink: 0;
+            position: sticky;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            z-index: 100;
+        }
+
+        .input-container input[type="text"] {
+            flex: 1;
+            height: 42px;
+            padding: 0 12px;
+            border: 1px solid #ccc;
+            border-radius: 21px;
+            font-size: 16px; /* 16px предотвращает автоматический зум на iOS */
+            outline: none;
+            background-color: #ffffff;
+        }
+
+        .input-container button {
+            height: 42px;
+            padding: 0 18px;
+            border: none;
+            border-radius: 21px;
+            background-color: #128c7e;
+            color: #ffffff;
+            font-size: 15px;
+            font-weight: bold;
+            cursor: pointer;
+            flex-shrink: 0;
+        }
+
+        .input-container button:active {
+            background-color: #075e54;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="chat-app">
+        <div class="chat-header">
+            <span>Спецсвязь</span>
+            <span id="user-status" style="font-size: 12px; opacity: 0.8;">Онлайн</span>
+        </div>
+
+        <div class="messages-container" id="messages">
+            <div class="message incoming">Добро пожаловать в чат!</div>
+        </div>
+
+        <form class="input-container" id="chat-form" onsubmit="sendMessage(event)">
+            <input type="text" id="message-input" placeholder="Сообщение..." autocomplete="off">
+            <button type="submit">Отправить</button>
+        </form>
+    </div>
+
+    <script>
+        const socket = io();
+        const messagesDiv = document.getElementById('messages');
+        const messageInput = document.getElementById('message-input');
+
+        // Прокрутка вниз при новом сообщении
+        function scrollToBottom() {
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        // Автоматический скролл при фокусе на инпут на Android
+        messageInput.addEventListener('focus', () => {
+            setTimeout(scrollToBottom, 300);
+        });
+
+        function sendMessage(e) {
+            e.preventDefault();
+            const text = messageInput.value.trim();
+            if (!text) return;
+
+            // Отображаем отправленное сообщение
+            appendMessage(text, 'outgoing');
+            
+            // Отправляем на сервер Flask-SocketIO
+            socket.emit('send_message', { msg: text });
+
+            messageInput.value = '';
+            scrollToBottom();
+        }
+
+        function appendMessage(text, type) {
+            const msgEl = document.createElement('div');
+            msgEl.classList.add('message', type);
+            msgEl.textContent = text;
+            messagesDiv.appendChild(msgEl);
+            scrollToBottom();
+        }
+
+        // Прием сообщений от сервера
+        socket.on('receive_message', (data) => {
+            appendMessage(data.msg, 'incoming');
+        });
+    </script>
+</body>
+</html>
