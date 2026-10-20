@@ -449,23 +449,23 @@ HTML_TEMPLATE = """
         let activeReplyMsg = null;
         let allLoadedMessages = {};
 
-        // МНОГОУРОВНЕВЫЕ STUN-СЕРВЕРЫДЛЯ ОБХОДА БРАНДМАУЭРОВ
+        // РАБОЧИЙ TURN ВМЕСТЕ СО STUN ДЛЯ ОБХОДА ВСЕХ ЛОКАЛЬНЫХ СЕТЕЙ И БРАУЗЕРОВ
         const iceServers = { 
             iceServers: [
                 { urls: 'stun:stun.l.google.com:19302' },
                 { urls: 'stun:stun1.l.google.com:19302' },
-                { urls: 'stun:stun2.l.google.com:19302' }
+                {
+                    urls: 'turn:openrelay.metered.ca:80',
+                    username: 'openrelayproject',
+                    credential: 'openrelayproject'
+                },
+                {
+                    urls: 'turn:openrelay.metered.ca:443',
+                    username: 'openrelayproject',
+                    credential: 'openrelayproject'
+                }
             ] 
         };
-
-        // АВТОМАТИЧЕСКАЯ РАЗБЛОКИРОВКА АУДИО НА IOS / SAFARI
-        function unlockAudio() {
-            if (audioContext && audioContext.state === 'suspended') {
-                audioContext.resume();
-            }
-        }
-        document.addEventListener('touchstart', unlockAudio, { once: true });
-        document.addEventListener('click', unlockAudio, { once: true });
 
         function getAvatarColor(name) {
             let hash = 0;
@@ -745,7 +745,7 @@ HTML_TEMPLATE = """
             });
         }
 
-        /* --- ИСПРАВЛЕННАЯ СИСТЕМА ГОЛОСОВОЙ СВЯЗИ WEBRTC P2P --- */
+        /* --- WEBRTC С УНИКАЛЬНЫМИ СЕССИЯМИ В КЛАДКАХ --- */
         function openMafiaModal() {
             closeProfileModal();
             document.getElementById('mafia-modal').style.display = 'flex';
@@ -804,6 +804,8 @@ HTML_TEMPLATE = """
 
         function startMicMeter(stream) {
             audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            if (audioContext.state === 'suspended') audioContext.resume();
+            
             analyser = audioContext.createAnalyser();
             const source = audioContext.createMediaStreamSource(stream);
             source.connect(analyser);
@@ -853,13 +855,14 @@ HTML_TEMPLATE = """
                     document.getElementById('audio-peers-container').appendChild(audioElem);
                 }
                 audioElem.srcObject = e.streams[0];
-                audioElem.play().catch(err => {});
+                audioElem.play().catch(err => console.log('Autoplay restriction:', err));
             };
 
             return pc;
         }
 
         socket.on('webrtc_user_joined', async (data) => {
+            if (data.sid === socket.id) return;
             const pc = createPeer(data.sid);
             const offer = await pc.createOffer();
             await pc.setLocalDescription(offer);
@@ -868,6 +871,8 @@ HTML_TEMPLATE = """
 
         socket.on('webrtc_signal', async (data) => {
             const senderSid = data.sender_sid;
+            if (senderSid === socket.id) return;
+            
             const pc = createPeer(senderSid);
 
             if (data.offer) {
@@ -1106,7 +1111,7 @@ def on_delete_msg(data):
     conn.close()
     emit('msg_deleted', {'msg_id': msg_id}, broadcast=True)
 
-# ИЗОЛИРОВАННЫЙ АДРЕСНЫЙ СИГНАЛИНГ ГОЛОСОВОЙ СВЯЗИ WEBRTC
+# АДРЕСНЫЙ WEBRTC СИГНАЛИНГ С SOCKET.ID В ВЕРСИИ ДЛЯ МНОГОПОТОЧНОСТИ
 @socketio.on('webrtc_join')
 def on_webrtc_join(data):
     room_id = data.get('room_id')
