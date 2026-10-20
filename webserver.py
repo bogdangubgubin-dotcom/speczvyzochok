@@ -116,13 +116,13 @@ def is_muted(username):
             return True, until
     return False, 0
 
-# --- ИГРОВОЙ ДВИЖОК 5 КОМНАТ МАФИИ ---
+# --- ДВИЖОК 5 КОМНАТ МАФИИ ---
 class MafiaRoom:
     def __init__(self, room_id, name):
         self.room_id = room_id
         self.name = name
-        self.state = 'lobby' # lobby, night, day, ended
-        self.players = {} # {username: {'role': None, 'alive': True, 'mic': True, 'slot': 0}}
+        self.state = 'lobby'
+        self.players = {}
         self.max_slots = 6
         self.night_actions = {'mafia': {}, 'doc': None, 'cop': None}
         self.day_votes = {}
@@ -171,7 +171,7 @@ class MafiaRoom:
         self.state = 'night'
         self.night_actions = {'mafia': {}, 'doc': None, 'cop': None}
         self.day_votes = {}
-        self.logs = ["Игра началась! Наступила ночь."]
+        self.logs = ["Игра началась! Наступила первая ночь."]
         return True, "Игра запущена!"
 
     def check_win(self):
@@ -244,7 +244,8 @@ HTML_TEMPLATE = """
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-        html, body { width: 100%; height: 100%; height: 100dvh; overflow: hidden; background: #121212; color: #fff; position: fixed; }
+        
+        html, body { width: 100vw; height: 100dvh; overflow: hidden; background: #121212; color: #fff; position: fixed; top: 0; left: 0; }
         
         #auth-screen { display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100dvh; padding: 20px; }
         .auth-box { background: #1e1e1e; padding: 25px; border-radius: 16px; width: 100%; max-width: 340px; text-align: center; border: 1px solid #2d2d2d; }
@@ -253,24 +254,27 @@ HTML_TEMPLATE = """
         button { width: 100%; padding: 12px; margin-top: 10px; border-radius: 10px; border: none; background: #1F6AA5; color: #fff; font-weight: bold; cursor: pointer; font-size: 15px; }
         
         #app-screen { display: none; height: 100dvh; width: 100vw; position: relative; overflow: hidden; }
+        
+        /* САЙДБАР */
         #sidebar { width: 280px; background: #1a1a1a; border-right: 1px solid #2d2d2d; display: flex; flex-direction: column; flex-shrink: 0; z-index: 10; transition: transform 0.2s; }
-        .sidebar-header { padding: 12px 15px; background: #1e1e1e; border-bottom: 1px solid #2d2d2d; font-weight: bold; display: flex; justify-content: space-between; align-items: center; }
+        .sidebar-header { padding: 12px 15px; background: #1e1e1e; border-bottom: 1px solid #2d2d2d; font-weight: bold; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
         .chat-list { flex: 1; overflow-y: auto; padding: 10px; }
         .section-title { font-size: 11px; text-transform: uppercase; color: #888; margin: 12px 8px 6px 8px; font-weight: bold; display: flex; justify-content: space-between; align-items: center; }
         
-        .chat-item { padding: 8px 12px; border-radius: 8px; cursor: pointer; margin-bottom: 4px; display: flex; align-items: center; gap: 10px; font-size: 14px; }
+        .chat-item { padding: 8px 12px; border-radius: 8px; cursor: pointer; margin-bottom: 4px; display: flex; align-items: center; gap: 10px; font-size: 14px; background: transparent; transition: background 0.2s; }
         .chat-item:hover, .chat-item.active { background: #2a2a2a; }
         
         .avatar { width: 34px; height: 34px; border-radius: 50%; background: #3B8ED0; display: flex; align-items: center; justify-content: center; font-weight: bold; color: #fff; font-size: 14px; flex-shrink: 0; }
         .status-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-left: auto; }
         .online { background: #4caf50; } .offline { background: #757575; }
 
+        /* ГЛАВНЫЙ ЧАТ */
         #chat-main { flex: 1; display: flex; flex-direction: column; background: #121212; min-width: 0; height: 100dvh; position: relative; }
-        header { height: 56px; background: #1e1e1e; padding: 0 15px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #2d2d2d; flex-shrink: 0; }
+        header { height: 56px; background: #1e1e1e; padding: 0 15px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #2d2d2d; flex-shrink: 0; width: 100%; }
         .header-left { display: flex; align-items: center; gap: 10px; }
         .header-title-box { display: flex; flex-direction: column; }
         .header-status { font-size: 11px; color: #888; }
-        .toggle-btn { width: 36px; height: 36px; background: #2a2a2a; border: 1px solid #333; font-size: 16px; border-radius: 8px; color: #fff; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+        .toggle-btn { width: 36px; height: 36px; background: #2a2a2a; border: 1px solid #333; font-size: 16px; border-radius: 8px; color: #fff; cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
 
         .search-bar { padding: 6px 12px; background: #181818; border-bottom: 1px solid #2d2d2d; display: flex; gap: 8px; }
         .search-bar input { margin: 0; padding: 6px 10px; font-size: 13px; height: 32px; }
@@ -282,7 +286,7 @@ HTML_TEMPLATE = """
         .msg-sender { font-size: 11px; font-weight: bold; color: #82b1ff; }
         .msg-me .msg-sender { color: #e0e0e0; text-align: right; }
 
-        .msg-actions { display: none; position: absolute; top: -16px; right: 5px; background: #2a2a2a; border-radius: 20px; padding: 4px 8px; gap: 8px; border: 1px solid #555; z-index: 10; max-width: 90vw; overflow-x: auto; }
+        .msg-actions { display: none; position: absolute; top: -16px; right: 5px; background: #2a2a2a; border-radius: 20px; padding: 4px 8px; gap: 8px; border: 1px solid #555; z-index: 10; max-width: 90vw; overflow-x: auto; box-shadow: 0 4px 12px rgba(0,0,0,0.5); }
         .message:hover .msg-actions, .message:active .msg-actions { display: flex; }
         .action-btn { cursor: pointer; font-size: 14px; padding: 2px 4px; }
 
@@ -292,12 +296,13 @@ HTML_TEMPLATE = """
 
         #reply-bar { display: none; background: #222; padding: 6px 12px; border-top: 1px solid #333; justify-content: space-between; align-items: center; font-size: 13px; color: #3B8ED0; }
         
-        footer { position: absolute; bottom: 0; left: 0; right: 0; min-height: 60px; background: #1e1e1e; padding: 8px 10px; display: flex; gap: 8px; border-top: 1px solid #2d2d2d; align-items: center; z-index: 99; }
+        footer { position: absolute; bottom: 0; left: 0; right: 0; height: 60px; background: #1e1e1e; padding: 8px 10px; display: flex; gap: 8px; border-top: 1px solid #2d2d2d; align-items: center; z-index: 99; }
         footer input[type="text"] { flex: 1; height: 42px; background: #2a2a2a; color: #fff; border: 1px solid #333; border-radius: 10px; padding: 0 12px; font-size: 16px; outline: none; }
-        footer button { width: auto; padding: 0 14px; height: 42px; margin: 0; }
+        footer button { width: auto; padding: 0 16px; height: 42px; margin: 0; }
         .file-btn, .voice-btn { background: #333; border: 1px solid #444; border-radius: 10px; padding: 0 12px; height: 42px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: #fff; flex-shrink: 0; }
         .recording { background: #c62828 !important; }
 
+        /* МОДАЛЬНЫЕ ОКНА */
         .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100dvh; background: rgba(0,0,0,0.85); z-index: 1000; justify-content: center; align-items: center; padding: 15px; }
         .modal-box { background: #1e1e1e; border: 1px solid #333; border-radius: 12px; width: 100%; max-width: 480px; max-height: 90vh; display: flex; flex-direction: column; overflow: hidden; }
         .modal-header { padding: 15px; background: #252525; border-bottom: 1px solid #333; display: flex; justify-content: space-between; align-items: center; }
@@ -309,13 +314,17 @@ HTML_TEMPLATE = """
         
         /* КРУГЛЫЙ СТОЛ МАФИИ */
         .poker-table { background: #1b4332; border: 6px solid #2d6a4f; border-radius: 120px; padding: 15px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; justify-items: center; align-items: center; margin: 10px 0; }
-        .table-slot { width: 90px; height: 110px; background: rgba(0,0,0,0.4); border: 2px dashed #40916c; border-radius: 12px; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 6px; text-align: center; }
+        .table-slot { width: 90px; height: 110px; background: rgba(0,0,0,0.4); border: 2px dashed #40916c; border-radius: 12px; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 6px; text-align: center; position: relative; }
         .table-slot.occupied { border-style: solid; border-color: #52b788; background: rgba(0,0,0,0.7); }
-        .slot-avatar { width: 42px; height: 42px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 16px; margin-bottom: 4px; }
+        .slot-avatar { width: 42px; height: 42px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 16px; margin-bottom: 2px; }
         .slot-name { font-size: 11px; font-weight: bold; color: #fff; width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .slot-status { font-size: 10px; color: #aaa; }
 
-        .logout-btn { background: transparent; border: 1px solid #555; color: #aaa; padding: 4px 8px; font-size: 12px; border-radius: 6px; cursor: pointer; }
+        /* МИНИ-ИНДИКАТОР ГРОМКОСТИ ПОД ИМЕНЕМ */
+        .audio-meter-box { width: 50px; height: 3px; background: #333; border-radius: 2px; overflow: hidden; margin-top: 2px; display: none; }
+        .audio-meter-bar { height: 100%; width: 0%; background: #4caf50; transition: width 0.05s ease; }
+
+        .logout-btn { background: transparent; border: 1px solid #555; color: #aaa; padding: 4px 8px; font-size: 12px; border-radius: 6px; cursor: pointer; width: auto; flex-shrink: 0; margin: 0; }
         .admin-nav-btn { background: #d32f2f; color: #fff; padding: 6px 10px; font-size: 12px; border-radius: 6px; border: none; font-weight: bold; cursor: pointer; display: none; }
 
         @media (max-width: 600px) {
@@ -341,9 +350,9 @@ HTML_TEMPLATE = """
     <div id="app-screen">
         <div id="sidebar">
             <div class="sidebar-header">
-                <div style="display:flex; align-items:center; gap:8px; cursor:pointer;" onclick="openProfileModal()">
+                <div style="display:flex; align-items:center; gap:8px; cursor:pointer; overflow:hidden;" onclick="openProfileModal()">
                     <div id="my-avatar" class="avatar">?</div>
-                    <span id="user-display">...</span>
+                    <span id="user-display" style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:14px;">...</span>
                 </div>
                 <button class="logout-btn" onclick="logout()">Выйти</button>
             </div>
@@ -410,7 +419,7 @@ HTML_TEMPLATE = """
         </div>
     </div>
 
-    <!-- ОКНО МАФИИ (ЛОББИ КОМНАТ И ИГРА) -->
+    <!-- ОКНО МАФИИ -->
     <div id="mafia-modal" class="modal-overlay">
         <div class="modal-box">
             <div class="modal-header">
@@ -419,28 +428,24 @@ HTML_TEMPLATE = """
             </div>
             <div class="modal-body">
                 
-                <!-- СПИСОК 5 КОМНАТ -->
                 <div id="mafia-rooms-screen">
                     <p style="font-size:13px; color:#aaa; margin-bottom:10px;">Выберите свободную комнату для игры:</p>
                     <div id="mafia-rooms-container" style="display:flex; flex-direction:column; gap:8px;"></div>
                 </div>
 
-                <!-- ВНУТРИ КОМНАТЫ ЗА СТОЛОМ -->
                 <div id="mafia-gameplay-screen" style="display:none;">
                     <div style="display:flex; justify-content:space-between; align-items:center;">
                         <button onclick="backToMafiaRooms()" style="width:auto; padding:6px 12px; background:#444; font-size:12px;">← Назад к комнатам</button>
                         <span id="room-phase-badge" style="background:#3B8ED0; padding:4px 8px; border-radius:6px; font-size:12px; font-weight:bold;">Лобби</span>
                     </div>
 
-                    <!-- СТОЛ ИГРОКОВ -->
                     <div class="poker-table" id="poker-table-slots"></div>
 
                     <div style="display:flex; justify-content:space-between; align-items:center; font-size:13px;">
                         <div>Моя роль: <b id="my-role-text">Скрыта</b> <button onclick="toggleRoleShow()" style="width:auto; padding:2px 6px; font-size:10px;">👁</button></div>
-                        <button id="mic-toggle-btn" onclick="toggleMic()" style="width:auto; padding:4px 10px; font-size:11px; background:#388e3c;">🎙️ Микрофон</button>
+                        <button id="mic-toggle-btn" onclick="toggleMic()" style="width:auto; padding:4px 10px; font-size:11px; background:#c62828;">🔇 Микрофон ВЫКЛ</button>
                     </div>
 
-                    <!-- КНОПКИ ВХОДА / ВЫХОДА -->
                     <div style="display:flex; gap:8px; margin-top:5px;">
                         <button id="join-room-btn" onclick="joinActiveRoom()" style="background:#1F6AA5;">Занять место</button>
                         <button id="leave-room-btn" onclick="leaveActiveRoom()" style="background:#c62828; display:none;">Встать из-за стола</button>
@@ -463,7 +468,13 @@ HTML_TEMPLATE = """
         let activeRoomId = null;
         let showRoleFlag = false;
         let mySecretRole = null;
+        
         let isMicOn = false;
+        let mediaStream = null;
+        let audioContext = null;
+        let analyser = null;
+        let micAnimFrame = null;
+
         let mediaRecorder = null;
         let audioChunks = [];
         let isRecording = false;
@@ -590,9 +601,7 @@ HTML_TEMPLATE = """
             }
         }
 
-        socket.on('new_msg', (data) => {
-            appendMessage(data);
-        });
+        socket.on('new_msg', (data) => { appendMessage(data); });
 
         function appendMessage(msg) {
             const box = document.getElementById('messages');
@@ -610,16 +619,12 @@ HTML_TEMPLATE = """
                 contentHtml = `<audio controls src="data:audio/webm;base64,${msg.msg}" style="height:32px; width:160px;"></audio>`;
             }
 
-            div.innerHTML = `
-                <div class="msg-sender">${isMe ? 'Вы' : msg.sender}</div>
-                ${contentHtml}
-            `;
-
+            div.innerHTML = `<div class="msg-sender">${isMe ? 'Вы' : msg.sender}</div>${contentHtml}`;
             box.appendChild(div);
             box.scrollTop = box.scrollHeight;
         }
 
-        /* --- ЛОГИКА КОМНАТ И ГРАФИКИ МАФИИ --- */
+        /* --- ЛОГИКА КОМНАТ И ИНДИКАТОРА МИКРОФОНА --- */
         function openMafiaModal() {
             closeProfileModal();
             document.getElementById('mafia-modal').style.display = 'flex';
@@ -644,7 +649,10 @@ HTML_TEMPLATE = """
         }
 
         function joinActiveRoom() { socket.emit('mafia_join', { room_id: activeRoomId, user: currentUser }); }
-        function leaveActiveRoom() { socket.emit('mafia_leave', { room_id: activeRoomId, user: currentUser }); }
+        function leaveActiveRoom() { 
+            stopMicMeter();
+            socket.emit('mafia_leave', { room_id: activeRoomId, user: currentUser }); 
+        }
         function startActiveRoomGame() { socket.emit('mafia_start', { room_id: activeRoomId }); }
 
         function toggleRoleShow() {
@@ -652,11 +660,59 @@ HTML_TEMPLATE = """
             document.getElementById('my-role-text').innerText = showRoleFlag ? (mySecretRole || 'Нет роли') : 'Скрыта';
         }
 
-        function toggleMic() {
+        async function toggleMic() {
             isMicOn = !isMicOn;
             const btn = document.getElementById('mic-toggle-btn');
-            btn.innerText = isMicOn ? '🎙️ Микрофон ВКЛ' : '🔇 Микрофон ВЫКЛ';
-            btn.style.background = isMicOn ? '#388e3c' : '#c62828';
+            if (isMicOn) {
+                try {
+                    mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    btn.innerText = '🎙️ Микрофон ВКЛ';
+                    btn.style.background = '#388e3c';
+                    startMicMeter(mediaStream);
+                } catch(err) {
+                    alert('Ошибка микрофона: ' + err);
+                    isMicOn = false;
+                }
+            } else {
+                stopMicMeter();
+                btn.innerText = '🔇 Микрофон ВЫКЛ';
+                btn.style.background = '#c62828';
+            }
+        }
+
+        function startMicMeter(stream) {
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            analyser = audioContext.createAnalyser();
+            const source = audioContext.createMediaStreamSource(stream);
+            source.connect(analyser);
+            analyser.fftSize = 64;
+            const dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+            const myMeterBox = document.getElementById('meter-box-' + currentUser);
+            const myMeterBar = document.getElementById('meter-bar-' + currentUser);
+            if (myMeterBox) myMeterBox.style.display = 'block';
+
+            function updateLevel() {
+                analyser.getByteFrequencyData(dataArray);
+                let sum = 0;
+                for (let i = 0; i < dataArray.length; i++) sum += dataArray[i];
+                let average = sum / dataArray.length;
+                let pct = Math.min(100, Math.round((average / 128) * 100));
+                
+                if (myMeterBar) myMeterBar.style.width = pct + '%';
+                micAnimFrame = requestAnimationFrame(updateLevel);
+            }
+            updateLevel();
+        }
+
+        function stopMicMeter() {
+            if (micAnimFrame) cancelAnimationFrame(micAnimFrame);
+            if (mediaStream) mediaStream.getTracks().forEach(t => t.stop());
+            if (audioContext) audioContext.close();
+            isMicOn = false;
+            
+            const myMeterBox = document.getElementById('meter-box-' + currentUser);
+            if (myMeterBox) myMeterBox.style.display = 'none';
         }
 
         socket.on('mafia_rooms_list', (data) => {
@@ -714,6 +770,7 @@ HTML_TEMPLATE = """
                     slotDiv.innerHTML = `
                         <div class="slot-avatar" style="background:${getAvatarColor(p.name)}">${p.name.charAt(0).toUpperCase()}</div>
                         <div class="slot-name">${p.name}</div>
+                        <div class="audio-meter-box" id="meter-box-${p.name}"><div class="audio-meter-bar" id="meter-bar-${p.name}"></div></div>
                         <div class="slot-status">${p.alive ? '🟢 Жив' : '💀 Убит'}</div>
                         ${actBtn}
                     `;
