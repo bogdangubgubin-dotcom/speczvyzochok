@@ -244,7 +244,7 @@ HTML_TEMPLATE = """
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-        html, body { width: 100%; height: 100%; height: 100dvh; overflow: hidden; background: #121212; color: #fff; position: fixed; }
+        html, body { width: 100vw; height: 100dvh; overflow: hidden; background: #121212; color: #fff; position: fixed; top: 0; left: 0; }
         
         #auth-screen { display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100dvh; padding: 20px; }
         .auth-box { background: #1e1e1e; padding: 25px; border-radius: 16px; width: 100%; max-width: 340px; text-align: center; border: 1px solid #2d2d2d; }
@@ -265,24 +265,18 @@ HTML_TEMPLATE = """
         .online { background: #4caf50; } .offline { background: #757575; }
 
         #chat-main { flex: 1; display: flex; flex-direction: column; background: #121212; min-width: 0; height: 100dvh; position: relative; }
-        header { height: 56px; background: #1e1e1e; padding: 0 15px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #2d2d2d; flex-shrink: 0; }
+        header { height: 56px; background: #1e1e1e; padding: 0 15px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #2d2d2d; flex-shrink: 0; width: 100%; }
         .header-left { display: flex; align-items: center; gap: 10px; }
-        .toggle-btn { width: 36px; height: 36px; background: #2a2a2a; border: 1px solid #333; font-size: 16px; border-radius: 8px; color: #fff; cursor: pointer; }
+        .toggle-btn { width: 36px; height: 36px; background: #2a2a2a; border: 1px solid #333; font-size: 16px; border-radius: 8px; color: #fff; cursor: pointer; display: flex; align-items: center; justify-content: center; }
 
-        .search-bar { padding: 6px 12px; background: #181818; border-bottom: 1px solid #2d2d2d; display: flex; gap: 8px; }
-        .search-bar input { margin: 0; padding: 6px 10px; font-size: 13px; height: 32px; }
-
-        .chat-container { flex: 1; overflow-y: auto; padding: 15px; padding-bottom: 95px; display: flex; flex-direction: column; gap: 10px; }
+        .chat-container { flex: 1; overflow-y: auto; padding: 15px; padding-bottom: 75px; display: flex; flex-direction: column; gap: 10px; }
         .message { max-width: 80%; padding: 8px 12px; border-radius: 14px; font-size: 15px; position: relative; }
         .msg-me { background: #1F6AA5; align-self: flex-end; } .msg-other { background: #2a2a2a; align-self: flex-start; }
         .msg-sender { font-size: 11px; font-weight: bold; color: #82b1ff; }
 
-        .msg-actions { display: none; position: absolute; top: -16px; right: 5px; background: #2a2a2a; border-radius: 20px; padding: 4px 8px; gap: 8px; border: 1px solid #555; z-index: 10; max-width: 90vw; overflow-x: auto; }
-        .message:hover .msg-actions { display: flex; }
-
-        #reply-bar { display: none; background: #222; padding: 6px 12px; border-top: 1px solid #333; justify-content: space-between; align-items: center; font-size: 13px; color: #3B8ED0; }
-        footer { position: absolute; bottom: 0; left: 0; right: 0; min-height: 60px; background: #1e1e1e; padding: 8px 10px; display: flex; gap: 8px; border-top: 1px solid #2d2d2d; align-items: center; z-index: 99; }
+        footer { position: absolute; bottom: 0; left: 0; right: 0; height: 60px; background: #1e1e1e; padding: 8px 10px; display: flex; gap: 8px; border-top: 1px solid #2d2d2d; align-items: center; z-index: 99; }
         footer input[type="text"] { flex: 1; height: 42px; background: #2a2a2a; color: #fff; border: 1px solid #333; border-radius: 10px; padding: 0 12px; font-size: 16px; outline: none; }
+        footer button { width: auto; padding: 0 16px; height: 42px; margin: 0; }
         
         .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100dvh; background: rgba(0,0,0,0.85); z-index: 1000; justify-content: center; align-items: center; padding: 15px; }
         .modal-box { background: #1e1e1e; border: 1px solid #333; border-radius: 12px; width: 100%; max-width: 480px; max-height: 90vh; display: flex; flex-direction: column; overflow: hidden; }
@@ -343,7 +337,6 @@ HTML_TEMPLATE = """
                     <button class="toggle-btn" onclick="toggleSidebar()">☰</button>
                     <h3 id="chat-title">#general</h3>
                 </div>
-                <button style="background:#8e24aa; color:#fff; border:none; padding:6px 12px; border-radius:6px; font-weight:bold; cursor:pointer;" onclick="openMafiaModal()">🕵️ Игра Мафия</button>
             </header>
 
             <div class="chat-container" id="messages"></div>
@@ -355,7 +348,7 @@ HTML_TEMPLATE = """
         </div>
     </div>
 
-    <!-- Модальное окно Профиля -->
+    <!-- Модальное окно Профиля с кнопкой МАФИИ -->
     <div id="profile-modal" class="modal-overlay">
         <div class="modal-box">
             <div class="modal-header">
@@ -363,9 +356,11 @@ HTML_TEMPLATE = """
                 <button onclick="closeProfileModal()" style="width:auto; padding:4px 10px; background:#444;">✕</button>
             </div>
             <div class="modal-body">
+                <button onclick="openMafiaModal()" style="background:#8e24aa; margin-bottom:15px; padding:12px;">🕵️ Игра «Мафия»</button>
+                <h4>Смена пароля</h4>
                 <input type="password" id="old-pass" placeholder="Старый пароль">
                 <input type="password" id="new-pass" placeholder="Новый пароль">
-                <button onclick="changePassword()">Сохранить новый пароль</button>
+                <button onclick="changePassword()">Сохранить пароль</button>
             </div>
         </div>
     </div>
@@ -381,7 +376,7 @@ HTML_TEMPLATE = """
                 
                 <!-- СПИСОК 5 КОМНАТ -->
                 <div id="mafia-rooms-screen">
-                    <p style="font-size:13px; color:#aaa; margin-bottom:10px;">Выберите свободную комнату для игры:</p>
+                    <p style="font-size:13px; color:#aaa; margin-bottom:10px;">Выберите свободной комнату для игры:</p>
                     <div id="mafia-rooms-container" style="display:flex; flex-direction:column; gap:8px;"></div>
                 </div>
 
@@ -400,7 +395,7 @@ HTML_TEMPLATE = """
                         <button id="mic-toggle-btn" onclick="toggleMic()" style="width:auto; padding:4px 10px; font-size:11px; background:#388e3c;">🎙️ Микрофон</button>
                     </div>
 
-                    <!-- ИСПРАВЛЕННЫЕ КНОПКИ ВХОДА И ВЫХОДА ИЗ-ЗА СТОЛА -->
+                    <!-- КНОПКИ ВХОДА / ВЫХОДА -->
                     <div style="display:flex; gap:8px; margin-top:5px;">
                         <button id="join-room-btn" onclick="joinActiveRoom()" style="background:#1F6AA5;">Занять место</button>
                         <button id="leave-room-btn" onclick="leaveActiveRoom()" style="background:#c62828; display:none;">Встать из-за стола</button>
@@ -415,6 +410,9 @@ HTML_TEMPLATE = """
         </div>
     </div>
 
+    <!-- Аудио-элемент голосового чата -->
+    <audio id="remote-audio" autoplay></audio>
+
     <script>
         const socket = io();
         let currentUser = "";
@@ -422,7 +420,8 @@ HTML_TEMPLATE = """
         let activeRoomId = null;
         let showRoleFlag = false;
         let mySecretRole = null;
-        let isMicOn = true;
+        let isMicOn = false;
+        let mediaStream = null;
 
         function getAvatarColor(name) {
             let hash = 0;
@@ -481,8 +480,9 @@ HTML_TEMPLATE = """
             box.scrollTop = box.scrollHeight;
         });
 
-        /* --- ЛОГИКА 5 КОМНАТ МАФИИ И КНОПОК --- */
+        /* --- ГОЛОСОВОЙ ЧАТ И ИГРА МАФИЯ --- */
         function openMafiaModal() {
+            closeProfileModal();
             document.getElementById('mafia-modal').style.display = 'flex';
             backToMafiaRooms();
         }
@@ -513,10 +513,23 @@ HTML_TEMPLATE = """
             document.getElementById('my-role-text').innerText = showRoleFlag ? (mySecretRole || 'Нет роли') : 'Скрыта';
         }
 
-        function toggleMic() {
+        async function toggleMic() {
             isMicOn = !isMicOn;
-            document.getElementById('mic-toggle-btn').innerText = isMicOn ? '🎙️ Микрофон' : '🔇 Выкл';
-            document.getElementById('mic-toggle-btn').style.background = isMicOn ? '#388e3c' : '#c62828';
+            const btn = document.getElementById('mic-toggle-btn');
+            if (isMicOn) {
+                try {
+                    mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    btn.innerText = '🎙️ Микрофон ВКЛ';
+                    btn.style.background = '#388e3c';
+                } catch(err) {
+                    alert('Ошибка доступа к микрофону: ' + err);
+                    isMicOn = false;
+                }
+            } else {
+                if (mediaStream) mediaStream.getTracks().forEach(track => track.stop());
+                btn.innerText = '🔇 Микрофон ВЫКЛ';
+                btn.style.background = '#c62828';
+            }
         }
 
         socket.on('mafia_rooms_list', (data) => {
@@ -542,7 +555,6 @@ HTML_TEMPLATE = """
             document.getElementById('mafia-modal-title').innerText = '🕵️ ' + data.name;
             document.getElementById('room-phase-badge').innerText = data.state.toUpperCase();
 
-            // ПЕРЕКЛЮЧЕНИЕ КНОПОК «ЗАНЯТЬ МЕСТО» / «ВСТАТЬ ИЗ-ЗА СТОЛА»
             if (data.players[currentUser]) {
                 mySecretRole = data.players[currentUser].role;
                 document.getElementById('join-room-btn').style.display = 'none';
@@ -552,7 +564,6 @@ HTML_TEMPLATE = """
                 document.getElementById('leave-room-btn').style.display = 'none';
             }
 
-            // РЕНДЕР КРУГЛОГО СТОЛА (6 СЛОТОВ)
             const table = document.getElementById('poker-table-slots');
             table.innerHTML = '';
             
