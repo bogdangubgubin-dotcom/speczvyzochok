@@ -204,11 +204,9 @@ HTML_TEMPLATE = """
         
         #app-screen { display: none; height: 100dvh; width: 100vw; position: relative; overflow: hidden; }
         
-        /* ТЕМНЫЙ ФОН ДЛЯ ЗАКРЫТИЯ МЕНЮ НА ТЕЛЕФОНАХ */
         #sidebar-overlay { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100dvh; background: rgba(0,0,0,0.6); z-index: 9; }
         #sidebar-overlay.active { display: block; }
 
-        /* САЙДБАР */
         #sidebar { width: 280px; background: #1a1a1a; border-right: 2px solid #2d2d2d; display: flex; flex-direction: column; flex-shrink: 0; z-index: 10; height: 100dvh; transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1); }
         .sidebar-header { padding: 12px 15px; background: #1e1e1e; border-bottom: 1px solid #2d2d2d; font-weight: bold; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
         .chat-list { flex: 1; overflow-y: auto; padding: 10px; }
@@ -221,7 +219,6 @@ HTML_TEMPLATE = """
         .status-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-left: auto; }
         .online { background: #4caf50; } .offline { background: #757575; }
 
-        /* ГЛАВНЫЙ ЧАТ */
         #chat-main { flex: 1; display: flex; flex-direction: column; background: #121212; min-width: 0; height: 100dvh; position: relative; }
         header { height: 56px; background: #1e1e1e; padding: 0 15px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #2d2d2d; flex-shrink: 0; width: 100%; }
         .header-left { display: flex; align-items: center; gap: 10px; }
@@ -230,18 +227,22 @@ HTML_TEMPLATE = """
         .search-bar { padding: 6px 12px; background: #181818; border-bottom: 1px solid #2d2d2d; display: flex; gap: 8px; }
         .search-bar input { margin: 0; padding: 6px 10px; font-size: 13px; height: 32px; border-radius: 6px; width: 100%; }
 
-        .chat-container { flex: 1; overflow-y: auto; padding: 15px; padding-bottom: 85px; display: flex; flex-direction: column; gap: 12px; -webkit-overflow-scrolling: touch; }
+        .chat-container { flex: 1; overflow-y: auto; padding: 25px 15px 85px 15px; display: flex; flex-direction: column; gap: 14px; -webkit-overflow-scrolling: touch; }
         
-        /* СООБЩЕНИЯ И ВЗАИМОДЕЙСТВИЕ */
-        .message { max-width: 80%; padding: 10px 14px; border-radius: 14px; font-size: 15px; position: relative; display: flex; flex-direction: column; gap: 4px; word-wrap: break-word; user-select: text; }
+        /* ИСПРАВЛЕННЫЕ СООБЩЕНИЯ И ВСПЛЫВАЮЩАЯ ПАНЕЛЬ */
+        .message { max-width: 80%; padding: 10px 14px; border-radius: 14px; font-size: 15px; position: relative; display: flex; flex-direction: column; gap: 4px; word-wrap: break-word; user-select: text; margin-top: 5px; }
         .msg-me { background: #1F6AA5; align-self: flex-end; border-bottom-right-radius: 2px; }
         .msg-other { background: #2a2a2a; align-self: flex-start; border-bottom-left-radius: 2px; }
         .msg-sender { font-size: 11px; font-weight: bold; color: #82b1ff; }
         .msg-me .msg-sender { color: #e0e0e0; text-align: right; }
 
-        .msg-actions { display: none; position: absolute; top: -20px; right: 5px; background: #222; border-radius: 18px; padding: 4px 8px; gap: 8px; border: 1px solid #444; z-index: 20; box-shadow: 0 4px 12px rgba(0,0,0,0.6); }
+        .msg-actions { display: none; position: absolute; top: -26px; right: 0; background: #1e1e1e; border-radius: 12px; padding: 3px 8px; gap: 8px; border: 1px solid #444; z-index: 50; box-shadow: 0 4px 10px rgba(0,0,0,0.5); }
         .message:hover .msg-actions, .message:focus .msg-actions, .message.active-touch .msg-actions { display: flex; }
-        .action-btn { cursor: pointer; font-size: 13px; padding: 2px 4px; color: #fff; }
+        .action-btn { cursor: pointer; font-size: 14px; padding: 2px 4px; color: #fff; border: none; background: transparent; }
+        .action-btn:hover { transform: scale(1.2); }
+
+        .reactions-list { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 4px; }
+        .reaction-item { background: rgba(0,0,0,0.3); border-radius: 10px; padding: 2px 6px; font-size: 11px; border: 1px solid #444; cursor: pointer; }
 
         .reply-preview-box { background: rgba(0,0,0,0.3); border-left: 3px solid #3B8ED0; padding: 4px 8px; border-radius: 4px; font-size: 12px; color: #ddd; margin-bottom: 4px; }
         
@@ -253,7 +254,6 @@ HTML_TEMPLATE = """
         .file-btn, .voice-btn { background: #333; border: 1px solid #444; border-radius: 10px; padding: 0 12px; height: 42px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: #fff; flex-shrink: 0; }
         .recording { background: #c62828 !important; }
 
-        /* МОДАЛЬНЫЕ ОКНА */
         .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100dvh; background: rgba(0,0,0,0.85); z-index: 1000; justify-content: center; align-items: center; padding: 15px; }
         .modal-box { background: #1e1e1e; border: 1px solid #333; border-radius: 12px; width: 100%; max-width: 480px; max-height: 90vh; display: flex; flex-direction: column; overflow: hidden; }
         .modal-header { padding: 15px; background: #252525; border-bottom: 1px solid #333; display: flex; justify-content: space-between; align-items: center; }
@@ -263,7 +263,6 @@ HTML_TEMPLATE = """
         .room-title { font-weight: bold; font-size: 15px; }
         .room-info { font-size: 12px; color: #aaa; }
         
-        /* КРУГЛЫЙ СТОЛ И ИНДИКАТОР ГРОМКОСТИ МИКРОФОНА */
         .poker-table { background: #1b4332; border: 6px solid #2d6a4f; border-radius: 120px; padding: 15px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; justify-items: center; align-items: center; margin: 10px 0; }
         .table-slot { width: 90px; height: 110px; background: rgba(0,0,0,0.4); border: 2px dashed #40916c; border-radius: 12px; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 6px; text-align: center; position: relative; }
         .table-slot.occupied { border-style: solid; border-color: #52b788; background: rgba(0,0,0,0.7); }
@@ -271,7 +270,6 @@ HTML_TEMPLATE = """
         .slot-name { font-size: 11px; font-weight: bold; color: #fff; width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .slot-status { font-size: 10px; color: #aaa; }
 
-        /* МИНИАТЮРНЫЙ ИНДИКАТОР ГРОМКОСТИ (3px) */
         .audio-meter-box { width: 48px; height: 3px; background: #333; border-radius: 2px; overflow: hidden; margin: 2px 0; display: none; }
         .audio-meter-bar { height: 100%; width: 0%; background: #4caf50; transition: width 0.04s ease; }
 
@@ -352,7 +350,7 @@ HTML_TEMPLATE = """
         </div>
     </div>
 
-    <!-- МОДАЛЬНОЕ ОКНО ПРОФИЛЯ -->
+    <!-- МОДАЛЬНОЕ ОКНО ПРОФИЛЯ С ВОССТАНОВЛЕННОЙ СМЕНОЙ ПАРОЛЯ -->
     <div id="profile-modal" class="modal-overlay">
         <div class="modal-box">
             <div class="modal-header">
@@ -361,6 +359,12 @@ HTML_TEMPLATE = """
             </div>
             <div class="modal-body">
                 <button onclick="openMafiaModal()" style="background:#8e24aa; margin-bottom:15px; padding:12px;">🕵️ Игра «Мафия»</button>
+                <hr style="border:0; border-top:1px solid #333; margin:10px 0;">
+                <h4 style="font-size:14px; color:#aaa;">Смена пароля</h4>
+                <input type="password" id="old-pass" placeholder="Старый пароль">
+                <input type="password" id="new-pass" placeholder="Новый пароль">
+                <button onclick="changePassword()" style="background:#2e7d32;">Сохранить новый пароль</button>
+                <div id="pass-status" style="font-size:12px; text-align:center; color:#ff5555;"></div>
             </div>
         </div>
     </div>
@@ -373,7 +377,6 @@ HTML_TEMPLATE = """
                 <button onclick="closeMafiaModal()" style="width:auto; padding:4px 10px; background:#444;">✕</button>
             </div>
             <div class="modal-body">
-                
                 <div id="mafia-rooms-screen">
                     <p style="font-size:13px; color:#aaa; margin-bottom:10px;">Выберите свободную комнату для игры:</p>
                     <div id="mafia-rooms-container" style="display:flex; flex-direction:column; gap:8px;"></div>
@@ -401,13 +404,9 @@ HTML_TEMPLATE = """
                     <h4 style="font-size:13px; margin-top:5px;">События игры:</h4>
                     <div id="room-logs-box" style="background:#151515; border:1px solid #333; padding:8px; border-radius:8px; font-size:12px; height:90px; overflow-y:auto; color:#aaa;"></div>
                 </div>
-
             </div>
         </div>
     </div>
-
-    <!-- АУДИО-КОНТЕЙНЕР ДЛЯ РЕАЛЬНОГО ГОЛОСОВОГО ЧАТА WEBRTC -->
-    <div id="remote-audio-container" style="display:none;"></div>
 
     <script>
         const socket = io();
@@ -422,13 +421,13 @@ HTML_TEMPLATE = """
         let audioContext = null;
         let analyser = null;
         let micAnimFrame = null;
-        let peerConnections = {};
+        let audioProcessor = null;
 
         let mediaRecorder = null;
         let audioChunks = [];
         let isRecording = false;
         let activeReplyMsg = null;
-        let allLoadedMessages = [];
+        let allLoadedMessages = {};
 
         function getAvatarColor(name) {
             let hash = 0;
@@ -476,7 +475,6 @@ HTML_TEMPLATE = """
             }
         });
 
-        /* АДАПТИВНОЕ СВОРАЧИВАНИЕ ШТОРКИ */
         function toggleSidebar() {
             const sb = document.getElementById('sidebar');
             const ov = document.getElementById('sidebar-overlay');
@@ -488,7 +486,6 @@ HTML_TEMPLATE = """
             document.getElementById('sidebar-overlay').classList.remove('active');
         }
 
-        /* КАНАЛЫ И ПОЛЬЗОВАТЕЛИ */
         socket.on('channels_list', (data) => {
             const list = document.getElementById('channels-list');
             list.innerHTML = '';
@@ -530,6 +527,24 @@ HTML_TEMPLATE = """
                 };
                 list.appendChild(div);
             });
+        });
+
+        function changePassword() {
+            const oldP = document.getElementById('old-pass').value.trim();
+            const newP = document.getElementById('new-pass').value.trim();
+            if (!oldP || !newP) return;
+            socket.emit('change_password', { user: currentUser, old_pass: oldP, new_pass: newP });
+        }
+
+        socket.on('pass_response', (data) => {
+            const st = document.getElementById('pass-status');
+            st.innerText = data.message;
+            st.style.color = data.status === 'ok' ? '#4caf50' : '#ff5555';
+            if (data.status === 'ok') {
+                localStorage.setItem('pychat_pass', document.getElementById('new-pass').value.trim());
+                document.getElementById('old-pass').value = '';
+                document.getElementById('new-pass').value = '';
+            }
         });
 
         function sendMsg() {
@@ -597,18 +612,20 @@ HTML_TEMPLATE = """
         socket.on('new_msg', (data) => { appendMessage(data); });
 
         function appendMessage(msg) {
-            allLoadedMessages.push(msg);
+            allLoadedMessages[msg.id] = msg;
+            let div = document.getElementById('msg-elem-' + msg.id);
             const box = document.getElementById('messages');
             const isMe = msg.sender === currentUser;
-            const div = document.createElement('div');
-            div.className = 'message ' + (isMe ? 'msg-me' : 'msg-other');
-            div.setAttribute('tabindex', '0');
 
-            let replyHtml = '';
-            if (msg.reply_text) {
-                replyHtml = `<div class="reply-preview-box">${msg.reply_text}</div>`;
+            if (!div) {
+                div = document.createElement('div');
+                div.id = 'msg-elem-' + msg.id;
+                div.className = 'message ' + (isMe ? 'msg-me' : 'msg-other');
+                div.setAttribute('tabindex', '0');
+                box.appendChild(div);
             }
 
+            let replyHtml = msg.reply_text ? `<div class="reply-preview-box">${msg.reply_text}</div>` : '';
             let contentHtml = `<span>${msg.msg}</span>`;
             if (msg.msg_type === 'file') {
                 try {
@@ -619,16 +636,29 @@ HTML_TEMPLATE = """
                 contentHtml = `<audio controls src="data:audio/webm;base64,${msg.msg}" style="height:32px; width:180px;"></audio>`;
             }
 
+            let reactionsObj = {};
+            try { reactionsObj = JSON.parse(msg.reactions || '{}'); } catch(e){}
+            let reactionsHtml = '';
+            for (const [emoji, users] of Object.entries(reactionsObj)) {
+                if (users.length > 0) {
+                    reactionsHtml += `<span class="reaction-item" onclick="addReaction(${msg.id}, '${emoji}')">${emoji} ${users.length}</span>`;
+                }
+            }
+
+            let deleteBtn = isMe ? `<button class="action-btn" onclick="deleteMessage(${msg.id})">🗑️</button>` : '';
+
             div.innerHTML = `
                 <div class="msg-actions">
-                    <span class="action-btn" onclick="setReplyMsg(${msg.id})">↩️</span>
-                    <span class="action-btn" onclick="addReaction(${msg.id}, '👍')">👍</span>
-                    <span class="action-btn" onclick="addReaction(${msg.id}, '❤️')">❤️</span>
-                    <span class="action-btn" onclick="addReaction(${msg.id}, '🔥')">🔥</span>
+                    <button class="action-btn" onclick="setReplyMsg(${msg.id})">↩️</button>
+                    <button class="action-btn" onclick="addReaction(${msg.id}, '👍')">👍</button>
+                    <button class="action-btn" onclick="addReaction(${msg.id}, '❤️')">❤️</button>
+                    <button class="action-btn" onclick="addReaction(${msg.id}, '🔥')">🔥</button>
+                    ${deleteBtn}
                 </div>
                 ${replyHtml}
                 <div class="msg-sender">${isMe ? 'Вы' : msg.sender}</div>
                 ${contentHtml}
+                <div class="reactions-list">${reactionsHtml}</div>
             `;
 
             div.addEventListener('click', (e) => {
@@ -637,12 +667,11 @@ HTML_TEMPLATE = """
                 div.classList.add('active-touch');
             });
 
-            box.appendChild(div);
             box.scrollTop = box.scrollHeight;
         }
 
         function setReplyMsg(id) {
-            const targetMsg = allLoadedMessages.find(m => m.id === id);
+            const targetMsg = allLoadedMessages[id];
             if (targetMsg) {
                 activeReplyMsg = targetMsg;
                 document.getElementById('reply-text').innerText = 'Ответ для ' + targetMsg.sender + ': ' + targetMsg.msg;
@@ -654,6 +683,22 @@ HTML_TEMPLATE = """
             socket.emit('add_reaction', { msg_id: id, emoji: emoji, user: currentUser });
         }
 
+        socket.on('update_msg_reactions', (data) => {
+            if (allLoadedMessages[data.msg_id]) {
+                allLoadedMessages[data.msg_id].reactions = JSON.stringify(data.reactions);
+                appendMessage(allLoadedMessages[data.msg_id]);
+            }
+        });
+
+        function deleteMessage(id) {
+            socket.emit('delete_msg', { msg_id: id, user: currentUser });
+        }
+
+        socket.on('msg_deleted', (data) => {
+            const elem = document.getElementById('msg-elem-' + data.msg_id);
+            if (elem) elem.remove();
+        });
+
         function searchMessages() {
             const query = document.getElementById('search-input').value.toLowerCase();
             document.querySelectorAll('.message').forEach(div => {
@@ -662,7 +707,7 @@ HTML_TEMPLATE = """
             });
         }
 
-        /* --- РЕАЛЬНЫЙ WEBRTC ГОЛОСОВОЙ ЧАТ И ИНДИКАТОР --- */
+        /* --- РЕАЛЬНЫЙ ГОЛОСОВОЙ ЧАТ В ИГРЕ МАФИЯ --- */
         function openMafiaModal() {
             closeProfileModal();
             document.getElementById('mafia-modal').style.display = 'flex';
@@ -708,7 +753,7 @@ HTML_TEMPLATE = """
                     btn.style.background = '#388e3c';
                     startMicMeter(mediaStream);
                 } catch(err) {
-                    alert('Ошибка микрофона: ' + err);
+                    alert('Ошибка доступа к микрофону: ' + err);
                     isMicOn = false;
                 }
             } else {
@@ -722,7 +767,22 @@ HTML_TEMPLATE = """
             audioContext = new (window.AudioContext || window.webkitAudioContext)();
             analyser = audioContext.createAnalyser();
             const source = audioContext.createMediaStreamSource(stream);
-            source.connect(analyser);
+            
+            // Запись и передача аудиопакетов на сервер для воспроизведения другим пользователям
+            audioProcessor = audioContext.createScriptProcessor(2048, 1, 1);
+            source.connect(audioProcessor);
+            audioProcessor.connect(audioContext.destination);
+            
+            audioProcessor.onaudioprocess = (e) => {
+                if (!isMicOn || !activeRoomId) return;
+                const inputData = e.inputBuffer.getChannelData(0);
+                const pcm16 = new Int16Array(inputData.length);
+                for (let i = 0; i < inputData.length; i++) {
+                    pcm16[i] = Math.max(-1, Math.min(1, inputData[i])) * 0x7FFF;
+                }
+                socket.emit('voice_data', { room_id: activeRoomId, user: currentUser, pcm: Array.from(pcm16) });
+            };
+
             analyser.fftSize = 64;
             const dataArray = new Uint8Array(analyser.frequencyBinCount);
 
@@ -743,9 +803,36 @@ HTML_TEMPLATE = """
             updateLevel();
         }
 
+        // Прием и динамическое воспроизведение чужого голоса
+        socket.on('play_voice', (data) => {
+            if (data.user === currentUser) return;
+            try {
+                if (!audioContext) audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                const floatData = new Float32Array(data.pcm.length);
+                for (let i = 0; i < data.pcm.length; i++) floatData[i] = data.pcm[i] / 0x7FFF;
+                
+                const buffer = audioContext.createBuffer(1, floatData.length, audioContext.sampleRate);
+                buffer.getChannelData(0).set(floatData);
+                const source = audioContext.createBufferSource();
+                source.buffer = buffer;
+                source.connect(audioContext.destination);
+                source.start();
+
+                // Показываем индикатор активности у говорящего
+                const otherMeter = document.getElementById('meter-bar-' + data.user);
+                const otherBox = document.getElementById('meter-box-' + data.user);
+                if (otherBox && otherMeter) {
+                    otherBox.style.display = 'block';
+                    otherMeter.style.width = '80%';
+                    setTimeout(() => { otherMeter.style.width = '0%'; }, 200);
+                }
+            } catch(e) {}
+        });
+
         function stopMicMeter() {
             if (micAnimFrame) cancelAnimationFrame(micAnimFrame);
             if (mediaStream) mediaStream.getTracks().forEach(t => t.stop());
+            if (audioProcessor) audioProcessor.disconnect();
             if (audioContext) audioContext.close();
             isMicOn = false;
             
@@ -875,6 +962,29 @@ def on_register(data):
     except sqlite3.IntegrityError: emit('auth_response', {'status': 'error', 'message': 'Логин занят'})
     finally: conn.close()
 
+@socketio.on('change_password')
+def on_change_password(data):
+    user = data['user']
+    old_p = data['old_pass']
+    new_p = data['new_pass']
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT password_hash, salt FROM users WHERE username = ?", (user,))
+    row = cur.fetchone()
+
+    if row:
+        pwd_hash, salt = row
+        check_hash, _ = hash_password(old_p, salt)
+        if check_hash == pwd_hash:
+            new_hash, new_salt = hash_password(new_p)
+            cur.execute("UPDATE users SET password_hash = ?, salt = ? WHERE username = ?", (new_hash, new_salt, user))
+            conn.commit()
+            conn.close()
+            emit('pass_response', {'status': 'ok', 'message': 'Пароль успешно изменен!'})
+            return
+    conn.close()
+    emit('pass_response', {'status': 'error', 'message': 'Неверный старый пароль!'})
+
 @socketio.on('get_channels')
 def on_get_channels(): emit('channels_list', {'channels': ['#general']})
 
@@ -889,11 +999,57 @@ def on_get_users():
 
 @socketio.on('send_msg')
 def on_send_msg(data):
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("INSERT INTO messages (sender, target, message, msg_type, reply_to, reply_text) VALUES (?, ?, ?, ?, ?, ?)",
+                (data['sender'], data['target'], data['msg'], data.get('msg_type', 'text'), data.get('reply_to'), data.get('reply_text', '')))
+    msg_id = cur.lastrowid
+    conn.commit()
+    conn.close()
+
+    data['id'] = msg_id
     target = data['target']
     if target.startswith('#'): emit('new_msg', data, room=target)
     else:
         emit('new_msg', data, room=target)
         if data['sender'] != target: emit('new_msg', data, room=data['sender'])
+
+@socketio.on('add_reaction')
+def on_add_reaction(data):
+    msg_id = data['msg_id']
+    emoji = data['emoji']
+    user = data['user']
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT reactions FROM messages WHERE id = ?", (msg_id,))
+    row = cur.fetchone()
+
+    if row:
+        reactions = json.loads(row[0] or '{}')
+        if emoji not in reactions: reactions[emoji] = []
+        
+        if user in reactions[emoji]: reactions[emoji].remove(user)
+        else: reactions[emoji].append(user)
+
+        cur.execute("UPDATE messages SET reactions = ? WHERE id = ?", (json.dumps(reactions), msg_id))
+        conn.commit()
+        conn.close()
+        emit('update_msg_reactions', {'msg_id': msg_id, 'reactions': reactions}, broadcast=True)
+
+@socketio.on('delete_msg')
+def on_delete_msg(data):
+    msg_id = data['msg_id']
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM messages WHERE id = ?", (msg_id,))
+    conn.commit()
+    conn.close()
+    emit('msg_deleted', {'msg_id': msg_id}, broadcast=True)
+
+# ТРАНСЛЯЦИЯ ЗВУКА ГОЛОСА МЕЖДУ ИГРОКАМИ
+@socketio.on('voice_data')
+def on_voice_data(data):
+    emit('play_voice', data, broadcast=True)
 
 # SOCKET EVENTS ДЛЯ 5 КОМНАТ МАФИИ
 def broadcast_room_state(room_id):
