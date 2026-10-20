@@ -262,7 +262,7 @@ HTML_TEMPLATE = """
         .header-title-box { display: flex; flex-direction: column; }
         .header-status { font-size: 11px; color: #888; }
 
-        .toggle-btn { width: 36px; height: 36px; padding: 0; margin: 0; background: #2a2a2a; border: 1px solid #333; font-size: 16px; border-radius: 8px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+        .toggle-btn { width: 36px; height: 36px; padding: 0; margin: 0; background: #2a2a2a; border: 1px solid #333; font-size: 16px; border-radius: 8px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; color: #fff; cursor: pointer; }
 
         .search-bar { padding: 6px 12px; background: #181818; border-bottom: 1px solid #2d2d2d; display: flex; gap: 8px; }
         .search-bar input { margin: 0; padding: 6px 10px; font-size: 13px; height: 32px; }
