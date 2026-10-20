@@ -132,6 +132,12 @@ class MafiaGame:
             return True
         return False
 
+    def remove_player(self, username):
+        if self.state == 'lobby' and username in self.players:
+            del self.players[username]
+            return True
+        return False
+
     def start_game(self):
         plist = list(self.players.keys())
         if len(plist) < 3:
@@ -283,9 +289,12 @@ HTML_TEMPLATE = """
         .reactions-row { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 4px; }
         .reaction-badge { background: rgba(0,0,0,0.3); border-radius: 12px; padding: 2px 6px; font-size: 11px; cursor: pointer; display: flex; align-items: center; gap: 3px; border: 1px solid #444; }
 
-        .msg-actions { display: none; position: absolute; top: -12px; right: 10px; background: #333; border-radius: 16px; padding: 2px 6px; gap: 6px; border: 1px solid #555; z-index: 10; }
-        .message:hover .msg-actions { display: flex; }
-        .action-btn { cursor: pointer; font-size: 12px; padding: 2px; }
+        /* Адаптивные действия и реакции для телефонов */
+        .msg-actions { display: none; position: absolute; top: -16px; right: 5px; background: #2a2a2a; border-radius: 20px; padding: 4px 8px; gap: 8px; border: 1px solid #555; z-index: 10; max-width: 90vw; overflow-x: auto; box-shadow: 0 4px 12px rgba(0,0,0,0.5); }
+        .message:hover .msg-actions, .message:active .msg-actions { display: flex; }
+        .msg-me .msg-actions { right: 0; left: auto; }
+        .msg-other .msg-actions { left: 0; right: auto; }
+        .action-btn { cursor: pointer; font-size: 14px; padding: 2px 4px; user-select: none; }
 
         #typing-indicator { font-size: 12px; color: #888; font-style: italic; padding: 0 15px 5px 15px; height: 18px; }
 
@@ -323,7 +332,6 @@ HTML_TEMPLATE = """
         .admin-table th, .admin-table td { border: 1px solid #3a3a3a; padding: 6px 8px; text-align: left; }
         .admin-btn { padding: 4px 8px; font-size: 11px; margin: 2px; width: auto; display: inline-block; border-radius: 4px; border: none; color: #fff; font-weight: bold; cursor: pointer; }
 
-        /* Игровые стили */
         .mafia-card { background: #2a2a2a; border-radius: 8px; padding: 12px; border-left: 4px solid #8e24aa; margin-bottom: 10px; }
         .role-badge { display: inline-block; padding: 4px 8px; border-radius: 6px; background: #444; font-weight: bold; font-size: 12px; }
         .player-row { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid #333; font-size: 13px; }
@@ -332,6 +340,7 @@ HTML_TEMPLATE = """
         @media (max-width: 600px) {
             #sidebar { position: absolute; left: 0; top: 0; bottom: 0; width: 80%; max-width: 280px; }
             #sidebar.hidden { transform: translateX(-100%); }
+            .message { max-width: 90%; }
         }
     </style>
 </head>
@@ -413,7 +422,7 @@ HTML_TEMPLATE = """
         <img id="lightbox-img" src="" alt="Photo">
     </div>
 
-    <!-- Модальное окно профиля с кнопкой МАФИИ -->
+    <!-- Модальное окно профиля -->
     <div id="profile-modal" class="modal-overlay">
         <div class="modal-box">
             <div class="modal-header">
@@ -448,8 +457,10 @@ HTML_TEMPLATE = """
                     <div style="margin-top:5px; font-size:13px;">Моя роль: <span id="my-role-badge" class="role-badge">Скрыта</span> <button onclick="toggleRoleShow()" style="width:auto; padding:2px 6px; font-size:10px;">👁 Показать</button></div>
                 </div>
 
-                <div style="display:flex; gap:8px;">
-                    <button onclick="joinMafiaGame()">Войти в игру</button>
+                <!-- КНОПКИ ВХОДА И ВЫХОДА ИЗ ИГРЫ -->
+                <div id="mafia-lobby-btns" style="display:flex; gap:8px;">
+                    <button id="mafia-join-btn" onclick="joinMafiaGame()">Войти в игру</button>
+                    <button id="mafia-leave-btn" onclick="leaveMafiaGame()" style="background:#c62828; display:none;">Выйти из игры</button>
                     <button onclick="startMafiaGame()" style="background:#2e7d32;">Старт игры</button>
                 </div>
 
@@ -990,6 +1001,7 @@ HTML_TEMPLATE = """
         function closeMafiaModal() { document.getElementById('mafia-modal').style.display = 'none'; }
 
         function joinMafiaGame() { socket.emit('mafia_join', { user: currentUser }); }
+        function leaveMafiaGame() { socket.emit('mafia_leave', { user: currentUser }); }
         function startMafiaGame() { socket.emit('mafia_start', { user: currentUser }); }
 
         function toggleRoleShow() {
@@ -1014,6 +1026,11 @@ HTML_TEMPLATE = """
             
             if (data.players[currentUser]) {
                 mySecretRole = data.players[currentUser].role;
+                document.getElementById('mafia-join-btn').style.display = 'none';
+                document.getElementById('mafia-leave-btn').style.display = 'inline-block';
+            } else {
+                document.getElementById('mafia-join-btn').style.display = 'inline-block';
+                document.getElementById('mafia-leave-btn').style.display = 'none';
             }
 
             const plist = document.getElementById('mafia-players-list');
@@ -1102,11 +1119,19 @@ def index():
 
 @socketio.on('typing')
 def on_typing(data):
-    emit('user_typing', data, broadcast=True)
+    target = data.get('target', '')
+    if target.startswith('#'):
+        emit('user_typing', data, room=target, include_self=False)
+    else:
+        emit('user_typing', data, room=target, include_self=False)
 
 @socketio.on('stop_typing')
 def on_stop_typing(data):
-    emit('user_stop_typing', data, broadcast=True)
+    target = data.get('target', '')
+    if target.startswith('#'):
+        emit('user_stop_typing', data, room=target, include_self=False)
+    else:
+        emit('user_stop_typing', data, room=target, include_self=False)
 
 @socketio.on('register')
 def on_register(data):
@@ -1155,6 +1180,8 @@ def on_login(data):
         conn.close()
         check_hash, _ = hash_password(password, salt)
         if check_hash == pwd_hash:
+            join_room(username)
+            join_room('#general')
             emit('auth_response', {'status': 'ok', 'username': username, 'role': role})
         else:
             emit('auth_response', {'status': 'error', 'message': 'Неверный пароль'})
@@ -1197,13 +1224,18 @@ def on_get_channels(data=None):
     for name, members_str in rows:
         if name == '#general' or not members_str:
             channels.append(name)
+            join_room(name)
         else:
             try:
                 members = json.loads(members_str)
-                if username in members: channels.append(name)
-            except Exception: channels.append(name)
+                if username in members: 
+                    channels.append(name)
+                    join_room(name)
+            except Exception: 
+                channels.append(name)
+                join_room(name)
 
-    emit('channels_list', {'channels': channels}, broadcast=True)
+    emit('channels_list', {'channels': channels})
 
 @socketio.on('get_users')
 def on_get_users():
@@ -1263,7 +1295,13 @@ def on_send_msg(data):
         'msg_type': msg_type, 'reply_to': reply_to, 'reply_text': reply_text,
         'timestamp': ts, 'is_read': 0, 'reactions': {}
     }
-    emit('new_msg', payload, broadcast=True)
+    
+    if target.startswith('#'):
+        emit('new_msg', payload, room=target)
+    else:
+        emit('new_msg', payload, room=target)
+        if sender != target:
+            emit('new_msg', payload, room=sender)
 
 @socketio.on('edit_msg')
 def on_edit_msg(data):
@@ -1353,6 +1391,12 @@ def on_mafia_get_state():
 def on_mafia_join(data):
     if mafia_game.add_player(data['user']):
         mafia_game.logs.append(f"Игрок **{data['user']}** вошел в комнату.")
+        broadcast_mafia_state()
+
+@socketio.on('mafia_leave')
+def on_mafia_leave(data):
+    if mafia_game.remove_player(data['user']):
+        mafia_game.logs.append(f"Игрок **{data['user']}** вышел из комнаты.")
         broadcast_mafia_state()
 
 @socketio.on('mafia_start')
