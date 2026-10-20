@@ -4,7 +4,7 @@ import hashlib
 import time
 import json
 import random
-from flask import Flask, render_template_string
+from flask import Flask, render_template_string, request
 from flask_socketio import SocketIO, emit, join_room, leave_room
 
 app = Flask(__name__)
@@ -56,6 +56,10 @@ def init_db():
         )
     """)
     
+    cur.execute("SELECT username FROM users WHERE username = 'totr'")
+    if cur.fetchone():
+        cur.execute("UPDATE users SET role = 'admin' WHERE username = 'totr'")
+        
     conn.commit()
     conn.close()
 
@@ -445,7 +449,23 @@ HTML_TEMPLATE = """
         let activeReplyMsg = null;
         let allLoadedMessages = {};
 
-        const iceServers = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+        // МНОГОУРОВНЕВЫЕ STUN-СЕРВЕРЫДЛЯ ОБХОДА БРАНДМАУЭРОВ
+        const iceServers = { 
+            iceServers: [
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:stun1.l.google.com:19302' },
+                { urls: 'stun:stun2.l.google.com:19302' }
+            ] 
+        };
+
+        // АВТОМАТИЧЕСКАЯ РАЗБЛОКИРОВКА АУДИО НА IOS / SAFARI
+        function unlockAudio() {
+            if (audioContext && audioContext.state === 'suspended') {
+                audioContext.resume();
+            }
+        }
+        document.addEventListener('touchstart', unlockAudio, { once: true });
+        document.addEventListener('click', unlockAudio, { once: true });
 
         function getAvatarColor(name) {
             let hash = 0;
@@ -651,7 +671,7 @@ HTML_TEMPLATE = """
                     contentHtml = `<a href="data:application/octet-stream;base64,${fileData.data}" download="${fileData.name}" style="color:#fff;">📁 ${fileData.name}</a>`;
                 } catch(e) {}
             } else if (msg.msg_type === 'voice') {
-                contentHtml = `<audio controls src="data:audio/webm;base64,${msg.msg}" style="height:32px; width:180px;"></audio>`;
+                contentHtml = `<audio controls playsinline src="data:audio/webm;base64,${msg.msg}" style="height:32px; width:180px;"></audio>`;
             }
 
             let reactionsObj = {};
@@ -725,7 +745,7 @@ HTML_TEMPLATE = """
             });
         }
 
-        /* --- WEBRTC ПОЛНОЦЕННЫЙ ГОЛОСОВОЙ ЧАТ --- */
+        /* --- ИСПРАВЛЕННАЯ СИСТЕМА ГОЛОСОВОЙ СВЯЗИ WEBRTC P2P --- */
         function openMafiaModal() {
             closeProfileModal();
             document.getElementById('mafia-modal').style.display = 'flex';
@@ -808,10 +828,10 @@ HTML_TEMPLATE = """
             updateLevel();
         }
 
-        function createPeer(targetUser) {
-            if (peerConnections[targetUser]) return peerConnections[targetUser];
+        function createPeer(targetSid) {
+            if (peerConnections[targetSid]) return peerConnections[targetSid];
             const pc = new RTCPeerConnection(iceServers);
-            peerConnections[targetUser] = pc;
+            peerConnections[targetSid] = pc;
 
             if (mediaStream) {
                 mediaStream.getTracks().forEach(track => pc.addTrack(track, mediaStream));
@@ -819,41 +839,42 @@ HTML_TEMPLATE = """
 
             pc.onicecandidate = e => {
                 if (e.candidate) {
-                    socket.emit('webrtc_signal', { target: targetUser, sender: currentUser, candidate: e.candidate });
+                    socket.emit('webrtc_signal', { target_sid: targetSid, candidate: e.candidate });
                 }
             };
 
             pc.ontrack = e => {
-                let audioElem = document.getElementById('audio-' + targetUser);
+                let audioElem = document.getElementById('audio-' + targetSid);
                 if (!audioElem) {
                     audioElem = document.createElement('audio');
-                    audioElem.id = 'audio-' + targetUser;
+                    audioElem.id = 'audio-' + targetSid;
                     audioElem.autoplay = true;
+                    audioElem.playsInline = true;
                     document.getElementById('audio-peers-container').appendChild(audioElem);
                 }
                 audioElem.srcObject = e.streams[0];
+                audioElem.play().catch(err => {});
             };
 
             return pc;
         }
 
         socket.on('webrtc_user_joined', async (data) => {
-            if (data.user === currentUser) return;
-            const pc = createPeer(data.user);
+            const pc = createPeer(data.sid);
             const offer = await pc.createOffer();
             await pc.setLocalDescription(offer);
-            socket.emit('webrtc_signal', { target: data.user, sender: currentUser, offer: offer });
+            socket.emit('webrtc_signal', { target_sid: data.sid, offer: offer });
         });
 
         socket.on('webrtc_signal', async (data) => {
-            const sender = data.sender;
-            const pc = createPeer(sender);
+            const senderSid = data.sender_sid;
+            const pc = createPeer(senderSid);
 
             if (data.offer) {
                 await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
                 const answer = await pc.createAnswer();
                 await pc.setLocalDescription(answer);
-                socket.emit('webrtc_signal', { target: sender, sender: currentUser, answer: answer });
+                socket.emit('webrtc_signal', { target_sid: senderSid, answer: answer });
             } else if (data.answer) {
                 await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
             } else if (data.candidate) {
@@ -866,8 +887,8 @@ HTML_TEMPLATE = """
             if (mediaStream) mediaStream.getTracks().forEach(t => t.stop());
             if (audioContext) audioContext.close();
             
-            for (let u in peerConnections) {
-                peerConnections[u].close();
+            for (let sid in peerConnections) {
+                peerConnections[sid].close();
             }
             peerConnections = {};
             document.getElementById('audio-peers-container').innerHTML = '';
@@ -1085,15 +1106,19 @@ def on_delete_msg(data):
     conn.close()
     emit('msg_deleted', {'msg_id': msg_id}, broadcast=True)
 
+# ИЗОЛИРОВАННЫЙ АДРЕСНЫЙ СИГНАЛИНГ ГОЛОСОВОЙ СВЯЗИ WEBRTC
 @socketio.on('webrtc_join')
 def on_webrtc_join(data):
-    emit('webrtc_user_joined', data, broadcast=True)
+    room_id = data.get('room_id')
+    join_room(room_id)
+    emit('webrtc_user_joined', {'user': data['user'], 'sid': request.sid}, room=room_id, include_self=False)
 
 @socketio.on('webrtc_signal')
 def on_webrtc_signal(data):
-    target = data.get('target')
-    if target:
-        emit('webrtc_signal', data, room=target)
+    target_sid = data.get('target_sid')
+    data['sender_sid'] = request.sid
+    if target_sid:
+        emit('webrtc_signal', data, room=target_sid)
 
 def broadcast_room_state(room_id):
     room = mafia_rooms[room_id]
