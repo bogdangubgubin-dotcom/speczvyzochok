@@ -56,10 +56,6 @@ def init_db():
         )
     """)
     
-    cur.execute("SELECT username FROM users WHERE username = 'totr'")
-    if cur.fetchone():
-        cur.execute("UPDATE users SET role = 'admin' WHERE username = 'totr'")
-        
     conn.commit()
     conn.close()
 
@@ -277,7 +273,7 @@ HTML_TEMPLATE = """
         .audio-meter-bar { height: 100%; width: 0%; background: #4caf50; transition: width 0.04s ease; }
 
         .logout-btn { background: transparent; border: 1px solid #555; color: #aaa; padding: 4px 8px; font-size: 12px; border-radius: 6px; cursor: pointer; width: auto; flex-shrink: 0; margin: 0; }
-        .admin-nav-btn { background: #d32f2f; color: #fff; padding: 6px 10px; font-size: 12px; border-radius: 6px; border: none; font-weight: bold; cursor: pointer; display: none; }
+        .admin-nav-btn { background: #d32f2f; color: #fff; padding: 6px 10px; font-size: 12px; border-radius: 6px; border: none; font-weight: bold; cursor: pointer; display: inline-block; }
 
         @media (max-width: 600px) {
             #sidebar { position: fixed; left: 0; top: 0; bottom: 0; width: 80%; max-width: 280px; transform: translateX(-100%); }
@@ -382,7 +378,7 @@ HTML_TEMPLATE = """
                 <button onclick="closeAdminModal()" style="width:auto; padding:4px 10px; background:#444;">✕</button>
             </div>
             <div class="modal-body">
-                <p style="font-size:13px; color:#aaa;">Панель администратора готова к работе.</p>
+                <p style="font-size:13px; color:#aaa;">Панель администратора активна.</p>
             </div>
         </div>
     </div>
@@ -426,10 +422,11 @@ HTML_TEMPLATE = """
         </div>
     </div>
 
+    <div id="audio-peers-container" style="display:none;"></div>
+
     <script>
         const socket = io();
         let currentUser = "";
-        let userRole = "user";
         let currentTarget = "#general";
         let activeRoomId = null;
         let showRoleFlag = false;
@@ -440,13 +437,15 @@ HTML_TEMPLATE = """
         let audioContext = null;
         let analyser = null;
         let micAnimFrame = null;
-        let gameRecorder = null;
+        let peerConnections = {};
 
         let mediaRecorder = null;
         let audioChunks = [];
         let isRecording = false;
         let activeReplyMsg = null;
         let allLoadedMessages = {};
+
+        const iceServers = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
 
         function getAvatarColor(name) {
             let hash = 0;
@@ -477,16 +476,11 @@ HTML_TEMPLATE = """
         socket.on('auth_response', (data) => {
             if (data.status === 'ok') {
                 currentUser = data.username;
-                userRole = data.role || 'user';
                 localStorage.setItem('pychat_user', currentUser);
                 localStorage.setItem('pychat_pass', document.getElementById('password').value || localStorage.getItem('pychat_pass'));
                 document.getElementById('auth-screen').style.display = 'none';
                 document.getElementById('app-screen').style.display = 'flex';
                 document.getElementById('user-display').innerText = currentUser;
-                
-                if (userRole === 'admin') {
-                    document.getElementById('admin-btn').style.display = 'inline-block';
-                }
 
                 const myAv = document.getElementById('my-avatar');
                 myAv.innerText = currentUser.charAt(0).toUpperCase();
@@ -731,7 +725,7 @@ HTML_TEMPLATE = """
             });
         }
 
-        /* --- ИСПРАВЛЕННЫЙ ГОЛОСОВОЙ ЧАТ В ИГРАХ БЕЗ ЭХА И ЗАЦИКЛИВАНИЯ --- */
+        /* --- WEBRTC ПОЛНОЦЕННЫЙ ГОЛОСОВОЙ ЧАТ --- */
         function openMafiaModal() {
             closeProfileModal();
             document.getElementById('mafia-modal').style.display = 'flex';
@@ -776,6 +770,7 @@ HTML_TEMPLATE = """
                     btn.innerText = '🎙️ Микрофон ВКЛ';
                     btn.style.background = '#388e3c';
                     startMicMeter(mediaStream);
+                    socket.emit('webrtc_join', { room_id: activeRoomId, user: currentUser });
                 } catch(err) {
                     alert('Ошибка доступа к микрофону: ' + err);
                     isMicOn = false;
@@ -792,19 +787,6 @@ HTML_TEMPLATE = """
             analyser = audioContext.createAnalyser();
             const source = audioContext.createMediaStreamSource(stream);
             source.connect(analyser);
-
-            gameRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' });
-            gameRecorder.ondataavailable = e => {
-                if (e.data.size > 0 && isMicOn && activeRoomId) {
-                    const reader = new FileReader();
-                    reader.onloadend = () => {
-                        const b64 = reader.result.split(',')[1];
-                        socket.emit('voice_chunk', { room_id: activeRoomId, user: currentUser, chunk: b64 });
-                    };
-                    reader.readAsDataURL(e.data);
-                }
-            };
-            gameRecorder.start(250);
 
             analyser.fftSize = 64;
             const dataArray = new Uint8Array(analyser.frequencyBinCount);
@@ -826,29 +808,71 @@ HTML_TEMPLATE = """
             updateLevel();
         }
 
-        socket.on('play_voice_chunk', (data) => {
-            if (data.user === currentUser) return;
-            try {
-                const audio = new Audio("data:audio/webm;base64," + data.chunk);
-                audio.play().catch(e => {});
+        function createPeer(targetUser) {
+            if (peerConnections[targetUser]) return peerConnections[targetUser];
+            const pc = new RTCPeerConnection(iceServers);
+            peerConnections[targetUser] = pc;
 
-                const otherMeter = document.getElementById('meter-bar-' + data.user);
-                const otherBox = document.getElementById('meter-box-' + data.user);
-                if (otherBox && otherMeter) {
-                    otherBox.style.display = 'block';
-                    otherMeter.style.width = '80%';
-                    setTimeout(() => { otherMeter.style.width = '0%'; }, 250);
+            if (mediaStream) {
+                mediaStream.getTracks().forEach(track => pc.addTrack(track, mediaStream));
+            }
+
+            pc.onicecandidate = e => {
+                if (e.candidate) {
+                    socket.emit('webrtc_signal', { target: targetUser, sender: currentUser, candidate: e.candidate });
                 }
-            } catch(e) {}
+            };
+
+            pc.ontrack = e => {
+                let audioElem = document.getElementById('audio-' + targetUser);
+                if (!audioElem) {
+                    audioElem = document.createElement('audio');
+                    audioElem.id = 'audio-' + targetUser;
+                    audioElem.autoplay = true;
+                    document.getElementById('audio-peers-container').appendChild(audioElem);
+                }
+                audioElem.srcObject = e.streams[0];
+            };
+
+            return pc;
+        }
+
+        socket.on('webrtc_user_joined', async (data) => {
+            if (data.user === currentUser) return;
+            const pc = createPeer(data.user);
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+            socket.emit('webrtc_signal', { target: data.user, sender: currentUser, offer: offer });
+        });
+
+        socket.on('webrtc_signal', async (data) => {
+            const sender = data.sender;
+            const pc = createPeer(sender);
+
+            if (data.offer) {
+                await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
+                const answer = await pc.createAnswer();
+                await pc.setLocalDescription(answer);
+                socket.emit('webrtc_signal', { target: sender, sender: currentUser, answer: answer });
+            } else if (data.answer) {
+                await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
+            } else if (data.candidate) {
+                await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+            }
         });
 
         function stopMicMeter() {
             if (micAnimFrame) cancelAnimationFrame(micAnimFrame);
-            if (gameRecorder && gameRecorder.state !== 'inactive') gameRecorder.stop();
             if (mediaStream) mediaStream.getTracks().forEach(t => t.stop());
             if (audioContext) audioContext.close();
-            isMicOn = false;
             
+            for (let u in peerConnections) {
+                peerConnections[u].close();
+            }
+            peerConnections = {};
+            document.getElementById('audio-peers-container').innerHTML = '';
+            
+            isMicOn = false;
             const myMeterBox = document.getElementById('meter-box-' + currentUser);
             if (myMeterBox) myMeterBox.style.display = 'none';
         }
@@ -1061,9 +1085,15 @@ def on_delete_msg(data):
     conn.close()
     emit('msg_deleted', {'msg_id': msg_id}, broadcast=True)
 
-@socketio.on('voice_chunk')
-def on_voice_chunk(data):
-    emit('play_voice_chunk', data, broadcast=True)
+@socketio.on('webrtc_join')
+def on_webrtc_join(data):
+    emit('webrtc_user_joined', data, broadcast=True)
+
+@socketio.on('webrtc_signal')
+def on_webrtc_signal(data):
+    target = data.get('target')
+    if target:
+        emit('webrtc_signal', data, room=target)
 
 def broadcast_room_state(room_id):
     room = mafia_rooms[room_id]
