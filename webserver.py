@@ -4,7 +4,6 @@ import hashlib
 import time
 import json
 import random
-import psutil
 from flask import Flask, render_template_string
 from flask_socketio import SocketIO, emit, join_room, leave_room
 
@@ -14,8 +13,6 @@ socketio = SocketIO(app, cors_allowed_origins="*", async_mode=None)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, "messenger.db")
-
-ADMIN_PASSWORD_HASH = hashlib.sha256('1234'.encode('utf-8')).hexdigest()
 
 def get_db():
     return sqlite3.connect(DB_PATH, timeout=10)
@@ -35,13 +32,6 @@ def init_db():
         )
     """)
     
-    cur.execute("PRAGMA table_info(users)")
-    columns = [column[1] for column in cur.fetchall()]
-    if 'role' not in columns:
-        cur.execute("ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'user'")
-    if 'last_seen' not in columns:
-        cur.execute("ALTER TABLE users ADD COLUMN last_seen INTEGER DEFAULT 0")
-    
     cur.execute("""
         CREATE TABLE IF NOT EXISTS channels (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -50,7 +40,6 @@ def init_db():
             members TEXT DEFAULT ''
         )
     """)
-    
     cur.execute("INSERT OR IGNORE INTO channels (name, creator, members) VALUES ('#general', 'system', '')")
 
     cur.execute("""
@@ -63,36 +52,10 @@ def init_db():
             reply_to INTEGER DEFAULT NULL,
             reply_text TEXT DEFAULT '',
             reactions TEXT DEFAULT '{}',
-            is_read INTEGER DEFAULT 0,
-            is_edited INTEGER DEFAULT 0,
             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     """)
     
-    cur.execute("PRAGMA table_info(messages)")
-    msg_cols = [col[1] for col in cur.fetchall()]
-    if 'reply_to' not in msg_cols:
-        cur.execute("ALTER TABLE messages ADD COLUMN reply_to INTEGER DEFAULT NULL")
-    if 'reply_text' not in msg_cols:
-        cur.execute("ALTER TABLE messages ADD COLUMN reply_text TEXT DEFAULT ''")
-    if 'reactions' not in msg_cols:
-        cur.execute("ALTER TABLE messages ADD COLUMN reactions TEXT DEFAULT '{}'")
-    if 'is_read' not in msg_cols:
-        cur.execute("ALTER TABLE messages ADD COLUMN is_read INTEGER DEFAULT 0")
-    if 'is_edited' not in msg_cols:
-        cur.execute("ALTER TABLE messages ADD COLUMN is_edited INTEGER DEFAULT 0")
-
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS mutes (
-            username TEXT PRIMARY KEY,
-            until INTEGER
-        )
-    """)
-    
-    cur.execute("SELECT username FROM users WHERE username = 'totr'")
-    if cur.fetchone():
-        cur.execute("UPDATE users SET role = 'admin' WHERE username = 'totr'")
-        
     conn.commit()
     conn.close()
 
@@ -104,7 +67,6 @@ def hash_password(password, salt=None):
     key = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), salt.encode('utf-8'), 100000)
     return key.hex(), salt
 
-# --- ДВИЖОК 5 КОМНАТ МАФИИ ---
 class MafiaRoom:
     def __init__(self, room_id, name):
         self.room_id = room_id
@@ -242,8 +204,12 @@ HTML_TEMPLATE = """
         
         #app-screen { display: none; height: 100dvh; width: 100vw; position: relative; overflow: hidden; }
         
-        /* САЙДБАР С ЛИНИЕЙ РАЗДЕЛИТЕЛЯ */
-        #sidebar { width: 280px; background: #1a1a1a; border-right: 2px solid #2d2d2d; display: flex; flex-direction: column; flex-shrink: 0; z-index: 10; transition: transform 0.2s ease-in-out; }
+        /* ТЕМНЫЙ ФОН ДЛЯ ЗАКРЫТИЯ МЕНЮ НА ТЕЛЕФОНАХ */
+        #sidebar-overlay { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100dvh; background: rgba(0,0,0,0.6); z-index: 9; }
+        #sidebar-overlay.active { display: block; }
+
+        /* САЙДБАР */
+        #sidebar { width: 280px; background: #1a1a1a; border-right: 2px solid #2d2d2d; display: flex; flex-direction: column; flex-shrink: 0; z-index: 10; height: 100dvh; transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1); }
         .sidebar-header { padding: 12px 15px; background: #1e1e1e; border-bottom: 1px solid #2d2d2d; font-weight: bold; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
         .chat-list { flex: 1; overflow-y: auto; padding: 10px; }
         .section-title { font-size: 11px; text-transform: uppercase; color: #888; margin: 12px 8px 6px 8px; font-weight: bold; display: flex; justify-content: space-between; align-items: center; }
@@ -255,24 +221,30 @@ HTML_TEMPLATE = """
         .status-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-left: auto; }
         .online { background: #4caf50; } .offline { background: #757575; }
 
-        /* ГЛАВНАЯ ОБЛАСТЬ ЧАТА */
+        /* ГЛАВНЫЙ ЧАТ */
         #chat-main { flex: 1; display: flex; flex-direction: column; background: #121212; min-width: 0; height: 100dvh; position: relative; }
         header { height: 56px; background: #1e1e1e; padding: 0 15px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #2d2d2d; flex-shrink: 0; width: 100%; }
         .header-left { display: flex; align-items: center; gap: 10px; }
-        .header-title-box { display: flex; flex-direction: column; }
-        .header-status { font-size: 11px; color: #888; }
-        .toggle-btn { width: 36px; height: 36px; background: #2a2a2a; border: 1px solid #333; font-size: 16px; border-radius: 8px; color: #fff; cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+        .toggle-btn { width: 36px; height: 36px; background: #2a2a2a; border: 1px solid #333; font-size: 18px; border-radius: 8px; color: #fff; cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
 
         .search-bar { padding: 6px 12px; background: #181818; border-bottom: 1px solid #2d2d2d; display: flex; gap: 8px; }
-        .search-bar input { margin: 0; padding: 6px 10px; font-size: 13px; height: 32px; border-radius: 6px; }
+        .search-bar input { margin: 0; padding: 6px 10px; font-size: 13px; height: 32px; border-radius: 6px; width: 100%; }
 
-        .chat-container { flex: 1; overflow-y: auto; padding: 15px; padding-bottom: 75px; display: flex; flex-direction: column; gap: 10px; -webkit-overflow-scrolling: touch; }
-        .message { max-width: 80%; padding: 8px 12px; border-radius: 14px; font-size: 15px; position: relative; display: flex; flex-direction: column; gap: 4px; word-wrap: break-word; }
+        .chat-container { flex: 1; overflow-y: auto; padding: 15px; padding-bottom: 85px; display: flex; flex-direction: column; gap: 12px; -webkit-overflow-scrolling: touch; }
+        
+        /* СООБЩЕНИЯ И ВЗАИМОДЕЙСТВИЕ */
+        .message { max-width: 80%; padding: 10px 14px; border-radius: 14px; font-size: 15px; position: relative; display: flex; flex-direction: column; gap: 4px; word-wrap: break-word; user-select: text; }
         .msg-me { background: #1F6AA5; align-self: flex-end; border-bottom-right-radius: 2px; }
         .msg-other { background: #2a2a2a; align-self: flex-start; border-bottom-left-radius: 2px; }
         .msg-sender { font-size: 11px; font-weight: bold; color: #82b1ff; }
         .msg-me .msg-sender { color: #e0e0e0; text-align: right; }
 
+        .msg-actions { display: none; position: absolute; top: -20px; right: 5px; background: #222; border-radius: 18px; padding: 4px 8px; gap: 8px; border: 1px solid #444; z-index: 20; box-shadow: 0 4px 12px rgba(0,0,0,0.6); }
+        .message:hover .msg-actions, .message:focus .msg-actions, .message.active-touch .msg-actions { display: flex; }
+        .action-btn { cursor: pointer; font-size: 13px; padding: 2px 4px; color: #fff; }
+
+        .reply-preview-box { background: rgba(0,0,0,0.3); border-left: 3px solid #3B8ED0; padding: 4px 8px; border-radius: 4px; font-size: 12px; color: #ddd; margin-bottom: 4px; }
+        
         #reply-bar { display: none; background: #222; padding: 6px 12px; border-top: 1px solid #333; justify-content: space-between; align-items: center; font-size: 13px; color: #3B8ED0; }
         
         footer { position: absolute; bottom: 0; left: 0; right: 0; height: 60px; background: #1e1e1e; padding: 8px 10px; display: flex; gap: 8px; border-top: 1px solid #2d2d2d; align-items: center; z-index: 99; }
@@ -306,8 +278,8 @@ HTML_TEMPLATE = """
         .logout-btn { background: transparent; border: 1px solid #555; color: #aaa; padding: 4px 8px; font-size: 12px; border-radius: 6px; cursor: pointer; width: auto; flex-shrink: 0; margin: 0; }
 
         @media (max-width: 600px) {
-            #sidebar { position: absolute; left: 0; top: 0; bottom: 0; width: 80%; max-width: 280px; }
-            #sidebar.hidden { transform: translateX(-100%); }
+            #sidebar { position: fixed; left: 0; top: 0; bottom: 0; width: 80%; max-width: 280px; transform: translateX(-100%); }
+            #sidebar.open { transform: translateX(0); }
             .poker-table { grid-template-columns: repeat(2, 1fr); border-radius: 30px; }
         }
     </style>
@@ -326,6 +298,8 @@ HTML_TEMPLATE = """
     </div>
 
     <div id="app-screen">
+        <div id="sidebar-overlay" onclick="closeSidebar()"></div>
+
         <div id="sidebar">
             <div class="sidebar-header">
                 <div style="display:flex; align-items:center; gap:8px; cursor:pointer; overflow:hidden;" onclick="openProfileModal()">
@@ -342,13 +316,12 @@ HTML_TEMPLATE = """
             </div>
         </div>
 
-        <div id="chat-main">
+        <div id="chat-main" onclick="closeSidebar()">
             <header>
                 <div class="header-left">
-                    <button class="toggle-btn" onclick="toggleSidebar()">☰</button>
+                    <button class="toggle-btn" onclick="event.stopPropagation(); toggleSidebar();">☰</button>
                     <div class="header-title-box">
                         <h3 id="chat-title">#general</h3>
-                        <span id="chat-status" class="header-status"></span>
                     </div>
                 </div>
                 <div style="display:flex; align-items:center; gap:8px;">
@@ -388,10 +361,6 @@ HTML_TEMPLATE = """
             </div>
             <div class="modal-body">
                 <button onclick="openMafiaModal()" style="background:#8e24aa; margin-bottom:15px; padding:12px;">🕵️ Игра «Мафия»</button>
-                <h4>Смена пароля</h4>
-                <input type="password" id="old-pass" placeholder="Старый пароль">
-                <input type="password" id="new-pass" placeholder="Новый пароль">
-                <button onclick="changePassword()">Сохранить пароль</button>
             </div>
         </div>
     </div>
@@ -437,6 +406,9 @@ HTML_TEMPLATE = """
         </div>
     </div>
 
+    <!-- АУДИО-КОНТЕЙНЕР ДЛЯ РЕАЛЬНОГО ГОЛОСОВОГО ЧАТА WEBRTC -->
+    <div id="remote-audio-container" style="display:none;"></div>
+
     <script>
         const socket = io();
         let currentUser = "";
@@ -450,10 +422,13 @@ HTML_TEMPLATE = """
         let audioContext = null;
         let analyser = null;
         let micAnimFrame = null;
+        let peerConnections = {};
 
         let mediaRecorder = null;
         let audioChunks = [];
         let isRecording = false;
+        let activeReplyMsg = null;
+        let allLoadedMessages = [];
 
         function getAvatarColor(name) {
             let hash = 0;
@@ -501,9 +476,19 @@ HTML_TEMPLATE = """
             }
         });
 
-        function toggleSidebar() { document.getElementById('sidebar').classList.toggle('hidden'); }
+        /* АДАПТИВНОЕ СВОРАЧИВАНИЕ ШТОРКИ */
+        function toggleSidebar() {
+            const sb = document.getElementById('sidebar');
+            const ov = document.getElementById('sidebar-overlay');
+            sb.classList.toggle('open');
+            ov.classList.toggle('active');
+        }
+        function closeSidebar() {
+            document.getElementById('sidebar').classList.remove('open');
+            document.getElementById('sidebar-overlay').classList.remove('active');
+        }
 
-        /* ОТРИСОВКА КАНАЛОВ И ПОЛЬЗОВАТЕЛЕЙ В САЙДБАРЕ */
+        /* КАНАЛЫ И ПОЛЬЗОВАТЕЛИ */
         socket.on('channels_list', (data) => {
             const list = document.getElementById('channels-list');
             list.innerHTML = '';
@@ -517,6 +502,7 @@ HTML_TEMPLATE = """
                     document.querySelectorAll('.chat-item').forEach(i => i.classList.remove('active'));
                     div.classList.add('active');
                     document.getElementById('messages').innerHTML = '';
+                    closeSidebar();
                 };
                 list.appendChild(div);
             });
@@ -540,6 +526,7 @@ HTML_TEMPLATE = """
                     document.querySelectorAll('.chat-item').forEach(i => i.classList.remove('active'));
                     div.classList.add('active');
                     document.getElementById('messages').innerHTML = '';
+                    closeSidebar();
                 };
                 list.appendChild(div);
             });
@@ -548,8 +535,18 @@ HTML_TEMPLATE = """
         function sendMsg() {
             const txt = document.getElementById('msg-input').value.trim();
             if (!txt) return;
-            socket.emit('send_msg', { sender: currentUser, target: currentTarget, msg: txt, msg_type: 'text' });
+            socket.emit('send_msg', {
+                sender: currentUser, target: currentTarget, msg: txt, msg_type: 'text',
+                reply_to: activeReplyMsg ? activeReplyMsg.id : null,
+                reply_text: activeReplyMsg ? activeReplyMsg.sender + ': ' + activeReplyMsg.msg : ''
+            });
             document.getElementById('msg-input').value = '';
+            cancelReply();
+        }
+
+        function cancelReply() {
+            activeReplyMsg = null;
+            document.getElementById('reply-bar').style.display = 'none';
         }
 
         function sendFile() {
@@ -600,11 +597,18 @@ HTML_TEMPLATE = """
         socket.on('new_msg', (data) => { appendMessage(data); });
 
         function appendMessage(msg) {
+            allLoadedMessages.push(msg);
             const box = document.getElementById('messages');
             const isMe = msg.sender === currentUser;
             const div = document.createElement('div');
             div.className = 'message ' + (isMe ? 'msg-me' : 'msg-other');
-            
+            div.setAttribute('tabindex', '0');
+
+            let replyHtml = '';
+            if (msg.reply_text) {
+                replyHtml = `<div class="reply-preview-box">${msg.reply_text}</div>`;
+            }
+
             let contentHtml = `<span>${msg.msg}</span>`;
             if (msg.msg_type === 'file') {
                 try {
@@ -615,12 +619,50 @@ HTML_TEMPLATE = """
                 contentHtml = `<audio controls src="data:audio/webm;base64,${msg.msg}" style="height:32px; width:180px;"></audio>`;
             }
 
-            div.innerHTML = `<div class="msg-sender">${isMe ? 'Вы' : msg.sender}</div>${contentHtml}`;
+            div.innerHTML = `
+                <div class="msg-actions">
+                    <span class="action-btn" onclick="setReplyMsg(${msg.id})">↩️</span>
+                    <span class="action-btn" onclick="addReaction(${msg.id}, '👍')">👍</span>
+                    <span class="action-btn" onclick="addReaction(${msg.id}, '❤️')">❤️</span>
+                    <span class="action-btn" onclick="addReaction(${msg.id}, '🔥')">🔥</span>
+                </div>
+                ${replyHtml}
+                <div class="msg-sender">${isMe ? 'Вы' : msg.sender}</div>
+                ${contentHtml}
+            `;
+
+            div.addEventListener('click', (e) => {
+                e.stopPropagation();
+                document.querySelectorAll('.message').forEach(m => m.classList.remove('active-touch'));
+                div.classList.add('active-touch');
+            });
+
             box.appendChild(div);
             box.scrollTop = box.scrollHeight;
         }
 
-        /* --- ЛОГИКА КОМНАТ И МИКРО-ИНДИКАТОРА ГРОМКОСТИ --- */
+        function setReplyMsg(id) {
+            const targetMsg = allLoadedMessages.find(m => m.id === id);
+            if (targetMsg) {
+                activeReplyMsg = targetMsg;
+                document.getElementById('reply-text').innerText = 'Ответ для ' + targetMsg.sender + ': ' + targetMsg.msg;
+                document.getElementById('reply-bar').style.display = 'flex';
+            }
+        }
+
+        function addReaction(id, emoji) {
+            socket.emit('add_reaction', { msg_id: id, emoji: emoji, user: currentUser });
+        }
+
+        function searchMessages() {
+            const query = document.getElementById('search-input').value.toLowerCase();
+            document.querySelectorAll('.message').forEach(div => {
+                const text = div.innerText.toLowerCase();
+                div.style.display = text.includes(query) ? 'flex' : 'none';
+            });
+        }
+
+        /* --- РЕАЛЬНЫЙ WEBRTC ГОЛОСОВОЙ ЧАТ И ИНДИКАТОР --- */
         function openMafiaModal() {
             closeProfileModal();
             document.getElementById('mafia-modal').style.display = 'flex';
