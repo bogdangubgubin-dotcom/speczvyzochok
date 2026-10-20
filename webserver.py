@@ -435,11 +435,12 @@ HTML_TEMPLATE = """
             }
         });
 
+        /* Блок безопасной авто-авторизации без ложных ошибок */
         window.addEventListener('DOMContentLoaded', () => {
             requestPushPermission();
             const savedUser = localStorage.getItem('pychat_user');
             const savedPass = localStorage.getItem('pychat_pass');
-            if (savedUser && savedPass) {
+            if (savedUser && savedPass && savedUser.trim() !== "" && savedUser !== "null") {
                 socket.emit('login', { username: savedUser, password: savedPass });
             }
         });
@@ -491,7 +492,13 @@ HTML_TEMPLATE = """
                 socket.emit('get_users');
                 switchTarget('#general');
             } else {
-                document.getElementById('status').innerText = data.message;
+                /* Если данные авто-входа устарели — очищаем их */
+                if(!document.getElementById('username').value) {
+                    localStorage.removeItem('pychat_user');
+                    localStorage.removeItem('pychat_pass');
+                } else {
+                    document.getElementById('status').innerText = data.message;
+                }
             }
         });
 
@@ -927,6 +934,8 @@ def on_register(data):
 def on_login(data):
     username = data.get('username', '').strip()
     password = data.get('password', '').strip()
+    
+    # Игнорируем пустые вызовы от незалогиненных пользователей
     if not username or not password:
         return
 
