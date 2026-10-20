@@ -104,18 +104,6 @@ def hash_password(password, salt=None):
     key = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), salt.encode('utf-8'), 100000)
     return key.hex(), salt
 
-def is_muted(username):
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute("SELECT until FROM mutes WHERE username = ?", (username,))
-    row = cur.fetchone()
-    conn.close()
-    if row:
-        until = row[0]
-        if until == -1 or until > int(time.time()):
-            return True, until
-    return False, 0
-
 # --- ДВИЖОК 5 КОМНАТ МАФИИ ---
 class MafiaRoom:
     def __init__(self, room_id, name):
@@ -171,7 +159,7 @@ class MafiaRoom:
         self.state = 'night'
         self.night_actions = {'mafia': {}, 'doc': None, 'cop': None}
         self.day_votes = {}
-        self.logs = ["Игра началась! Наступила первая ночь."]
+        self.logs = ["Игра началась! Наступила ночь."]
         return True, "Игра запущена!"
 
     def check_win(self):
@@ -244,7 +232,6 @@ HTML_TEMPLATE = """
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-        
         html, body { width: 100vw; height: 100dvh; overflow: hidden; background: #121212; color: #fff; position: fixed; top: 0; left: 0; }
         
         #auth-screen { display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100dvh; padding: 20px; }
@@ -255,20 +242,20 @@ HTML_TEMPLATE = """
         
         #app-screen { display: none; height: 100dvh; width: 100vw; position: relative; overflow: hidden; }
         
-        /* САЙДБАР */
-        #sidebar { width: 280px; background: #1a1a1a; border-right: 1px solid #2d2d2d; display: flex; flex-direction: column; flex-shrink: 0; z-index: 10; transition: transform 0.2s; }
+        /* САЙДБАР С ЛИНИЕЙ РАЗДЕЛИТЕЛЯ */
+        #sidebar { width: 280px; background: #1a1a1a; border-right: 2px solid #2d2d2d; display: flex; flex-direction: column; flex-shrink: 0; z-index: 10; transition: transform 0.2s ease-in-out; }
         .sidebar-header { padding: 12px 15px; background: #1e1e1e; border-bottom: 1px solid #2d2d2d; font-weight: bold; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
         .chat-list { flex: 1; overflow-y: auto; padding: 10px; }
         .section-title { font-size: 11px; text-transform: uppercase; color: #888; margin: 12px 8px 6px 8px; font-weight: bold; display: flex; justify-content: space-between; align-items: center; }
         
-        .chat-item { padding: 8px 12px; border-radius: 8px; cursor: pointer; margin-bottom: 4px; display: flex; align-items: center; gap: 10px; font-size: 14px; background: transparent; transition: background 0.2s; }
+        .chat-item { padding: 10px 12px; border-radius: 8px; cursor: pointer; margin-bottom: 4px; display: flex; align-items: center; gap: 10px; font-size: 14px; background: transparent; transition: background 0.2s; }
         .chat-item:hover, .chat-item.active { background: #2a2a2a; }
         
         .avatar { width: 34px; height: 34px; border-radius: 50%; background: #3B8ED0; display: flex; align-items: center; justify-content: center; font-weight: bold; color: #fff; font-size: 14px; flex-shrink: 0; }
         .status-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-left: auto; }
         .online { background: #4caf50; } .offline { background: #757575; }
 
-        /* ГЛАВНЫЙ ЧАТ */
+        /* ГЛАВНАЯ ОБЛАСТЬ ЧАТА */
         #chat-main { flex: 1; display: flex; flex-direction: column; background: #121212; min-width: 0; height: 100dvh; position: relative; }
         header { height: 56px; background: #1e1e1e; padding: 0 15px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #2d2d2d; flex-shrink: 0; width: 100%; }
         .header-left { display: flex; align-items: center; gap: 10px; }
@@ -277,22 +264,14 @@ HTML_TEMPLATE = """
         .toggle-btn { width: 36px; height: 36px; background: #2a2a2a; border: 1px solid #333; font-size: 16px; border-radius: 8px; color: #fff; cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
 
         .search-bar { padding: 6px 12px; background: #181818; border-bottom: 1px solid #2d2d2d; display: flex; gap: 8px; }
-        .search-bar input { margin: 0; padding: 6px 10px; font-size: 13px; height: 32px; }
+        .search-bar input { margin: 0; padding: 6px 10px; font-size: 13px; height: 32px; border-radius: 6px; }
 
-        .chat-container { flex: 1; overflow-y: auto; padding: 15px; padding-bottom: 95px; display: flex; flex-direction: column; gap: 10px; -webkit-overflow-scrolling: touch; }
+        .chat-container { flex: 1; overflow-y: auto; padding: 15px; padding-bottom: 75px; display: flex; flex-direction: column; gap: 10px; -webkit-overflow-scrolling: touch; }
         .message { max-width: 80%; padding: 8px 12px; border-radius: 14px; font-size: 15px; position: relative; display: flex; flex-direction: column; gap: 4px; word-wrap: break-word; }
         .msg-me { background: #1F6AA5; align-self: flex-end; border-bottom-right-radius: 2px; }
         .msg-other { background: #2a2a2a; align-self: flex-start; border-bottom-left-radius: 2px; }
         .msg-sender { font-size: 11px; font-weight: bold; color: #82b1ff; }
         .msg-me .msg-sender { color: #e0e0e0; text-align: right; }
-
-        .msg-actions { display: none; position: absolute; top: -16px; right: 5px; background: #2a2a2a; border-radius: 20px; padding: 4px 8px; gap: 8px; border: 1px solid #555; z-index: 10; max-width: 90vw; overflow-x: auto; box-shadow: 0 4px 12px rgba(0,0,0,0.5); }
-        .message:hover .msg-actions, .message:active .msg-actions { display: flex; }
-        .action-btn { cursor: pointer; font-size: 14px; padding: 2px 4px; }
-
-        .reply-preview-box { background: rgba(0,0,0,0.25); border-left: 3px solid #3B8ED0; padding: 4px 8px; border-radius: 4px; font-size: 12px; color: #ddd; margin-bottom: 4px; }
-        .reactions-row { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 4px; }
-        .reaction-badge { background: rgba(0,0,0,0.3); border-radius: 12px; padding: 2px 6px; font-size: 11px; cursor: pointer; display: flex; align-items: center; gap: 3px; border: 1px solid #444; }
 
         #reply-bar { display: none; background: #222; padding: 6px 12px; border-top: 1px solid #333; justify-content: space-between; align-items: center; font-size: 13px; color: #3B8ED0; }
         
@@ -312,7 +291,7 @@ HTML_TEMPLATE = """
         .room-title { font-weight: bold; font-size: 15px; }
         .room-info { font-size: 12px; color: #aaa; }
         
-        /* КРУГЛЫЙ СТОЛ МАФИИ */
+        /* КРУГЛЫЙ СТОЛ И ИНДИКАТОР ГРОМКОСТИ МИКРОФОНА */
         .poker-table { background: #1b4332; border: 6px solid #2d6a4f; border-radius: 120px; padding: 15px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; justify-items: center; align-items: center; margin: 10px 0; }
         .table-slot { width: 90px; height: 110px; background: rgba(0,0,0,0.4); border: 2px dashed #40916c; border-radius: 12px; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 6px; text-align: center; position: relative; }
         .table-slot.occupied { border-style: solid; border-color: #52b788; background: rgba(0,0,0,0.7); }
@@ -320,12 +299,11 @@ HTML_TEMPLATE = """
         .slot-name { font-size: 11px; font-weight: bold; color: #fff; width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .slot-status { font-size: 10px; color: #aaa; }
 
-        /* МИНИ-ИНДИКАТОР ГРОМКОСТИ ПОД ИМЕНЕМ */
-        .audio-meter-box { width: 50px; height: 3px; background: #333; border-radius: 2px; overflow: hidden; margin-top: 2px; display: none; }
-        .audio-meter-bar { height: 100%; width: 0%; background: #4caf50; transition: width 0.05s ease; }
+        /* МИНИАТЮРНЫЙ ИНДИКАТОР ГРОМКОСТИ (3px) */
+        .audio-meter-box { width: 48px; height: 3px; background: #333; border-radius: 2px; overflow: hidden; margin: 2px 0; display: none; }
+        .audio-meter-bar { height: 100%; width: 0%; background: #4caf50; transition: width 0.04s ease; }
 
         .logout-btn { background: transparent; border: 1px solid #555; color: #aaa; padding: 4px 8px; font-size: 12px; border-radius: 6px; cursor: pointer; width: auto; flex-shrink: 0; margin: 0; }
-        .admin-nav-btn { background: #d32f2f; color: #fff; padding: 6px 10px; font-size: 12px; border-radius: 6px; border: none; font-weight: bold; cursor: pointer; display: none; }
 
         @media (max-width: 600px) {
             #sidebar { position: absolute; left: 0; top: 0; bottom: 0; width: 80%; max-width: 280px; }
@@ -374,7 +352,6 @@ HTML_TEMPLATE = """
                     </div>
                 </div>
                 <div style="display:flex; align-items:center; gap:8px;">
-                    <button id="admin-btn" class="admin-nav-btn" onclick="openAdminModal()">⚙️ Админка</button>
                     <span style="font-size:11px; color:#4caf50;">🔒 E2EE</span>
                 </div>
             </header>
@@ -402,7 +379,7 @@ HTML_TEMPLATE = """
         </div>
     </div>
 
-    <!-- Модальное окно Профиля -->
+    <!-- МОДАЛЬНОЕ ОКНО ПРОФИЛЯ -->
     <div id="profile-modal" class="modal-overlay">
         <div class="modal-box">
             <div class="modal-header">
@@ -419,7 +396,7 @@ HTML_TEMPLATE = """
         </div>
     </div>
 
-    <!-- ОКНО МАФИИ -->
+    <!-- ОКНО ИГРЫ МАФИЯ -->
     <div id="mafia-modal" class="modal-overlay">
         <div class="modal-box">
             <div class="modal-header">
@@ -463,7 +440,6 @@ HTML_TEMPLATE = """
     <script>
         const socket = io();
         let currentUser = "";
-        let userRole = "user";
         let currentTarget = "#general";
         let activeRoomId = null;
         let showRoleFlag = false;
@@ -478,8 +454,6 @@ HTML_TEMPLATE = """
         let mediaRecorder = null;
         let audioChunks = [];
         let isRecording = false;
-        let activeReplyMsg = null;
-        let editingMsgId = null;
 
         function getAvatarColor(name) {
             let hash = 0;
@@ -510,7 +484,6 @@ HTML_TEMPLATE = """
         socket.on('auth_response', (data) => {
             if (data.status === 'ok') {
                 currentUser = data.username;
-                userRole = data.role || 'user';
                 localStorage.setItem('pychat_user', currentUser);
                 localStorage.setItem('pychat_pass', document.getElementById('password').value || localStorage.getItem('pychat_pass'));
                 document.getElementById('auth-screen').style.display = 'none';
@@ -530,30 +503,53 @@ HTML_TEMPLATE = """
 
         function toggleSidebar() { document.getElementById('sidebar').classList.toggle('hidden'); }
 
+        /* ОТРИСОВКА КАНАЛОВ И ПОЛЬЗОВАТЕЛЕЙ В САЙДБАРЕ */
+        socket.on('channels_list', (data) => {
+            const list = document.getElementById('channels-list');
+            list.innerHTML = '';
+            data.channels.forEach(ch => {
+                const div = document.createElement('div');
+                div.className = 'chat-item' + (ch === currentTarget ? ' active' : '');
+                div.innerText = ch;
+                div.onclick = () => {
+                    currentTarget = ch;
+                    document.getElementById('chat-title').innerText = ch;
+                    document.querySelectorAll('.chat-item').forEach(i => i.classList.remove('active'));
+                    div.classList.add('active');
+                    document.getElementById('messages').innerHTML = '';
+                };
+                list.appendChild(div);
+            });
+        });
+
+        socket.on('users_list', (data) => {
+            const list = document.getElementById('users-list');
+            list.innerHTML = '';
+            data.users.forEach(u => {
+                if (u.username === currentUser) return;
+                const div = document.createElement('div');
+                div.className = 'chat-item' + (u.username === currentTarget ? ' active' : '');
+                div.innerHTML = `
+                    <div class="avatar" style="background:${getAvatarColor(u.username)}">${u.username.charAt(0).toUpperCase()}</div>
+                    <span>${u.username}</span>
+                    <span class="status-dot ${u.online ? 'online' : 'offline'}"></span>
+                `;
+                div.onclick = () => {
+                    currentTarget = u.username;
+                    document.getElementById('chat-title').innerText = '@' + u.username;
+                    document.querySelectorAll('.chat-item').forEach(i => i.classList.remove('active'));
+                    div.classList.add('active');
+                    document.getElementById('messages').innerHTML = '';
+                };
+                list.appendChild(div);
+            });
+        });
+
         function sendMsg() {
             const txt = document.getElementById('msg-input').value.trim();
             if (!txt) return;
-
-            if (editingMsgId) {
-                socket.emit('edit_msg', { msg_id: editingMsgId, new_text: txt, sender: currentUser });
-                cancelReply();
-                return;
-            }
-
-            socket.emit('send_msg', {
-                sender: currentUser, target: currentTarget, msg: txt, msg_type: 'text',
-                reply_to: activeReplyMsg ? activeReplyMsg.id : null,
-                reply_text: activeReplyMsg ? activeReplyMsg.sender + ': ' + activeReplyMsg.text : ''
-            });
+            socket.emit('send_msg', { sender: currentUser, target: currentTarget, msg: txt, msg_type: 'text' });
             document.getElementById('msg-input').value = '';
-            cancelReply();
-        }
-
-        function cancelReply() {
-            activeReplyMsg = null;
-            editingMsgId = null;
-            document.getElementById('msg-input').value = '';
-            document.getElementById('reply-bar').style.display = 'none';
         }
 
         function sendFile() {
@@ -616,7 +612,7 @@ HTML_TEMPLATE = """
                     contentHtml = `<a href="data:application/octet-stream;base64,${fileData.data}" download="${fileData.name}" style="color:#fff;">📁 ${fileData.name}</a>`;
                 } catch(e) {}
             } else if (msg.msg_type === 'voice') {
-                contentHtml = `<audio controls src="data:audio/webm;base64,${msg.msg}" style="height:32px; width:160px;"></audio>`;
+                contentHtml = `<audio controls src="data:audio/webm;base64,${msg.msg}" style="height:32px; width:180px;"></audio>`;
             }
 
             div.innerHTML = `<div class="msg-sender">${isMe ? 'Вы' : msg.sender}</div>${contentHtml}`;
@@ -624,7 +620,7 @@ HTML_TEMPLATE = """
             box.scrollTop = box.scrollHeight;
         }
 
-        /* --- ЛОГИКА КОМНАТ И ИНДИКАТОРА МИКРОФОНА --- */
+        /* --- ЛОГИКА КОМНАТ И МИКРО-ИНДИКАТОРА ГРОМКОСТИ --- */
         function openMafiaModal() {
             closeProfileModal();
             document.getElementById('mafia-modal').style.display = 'flex';
