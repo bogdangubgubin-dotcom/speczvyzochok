@@ -56,6 +56,10 @@ def init_db():
         )
     """)
     
+    cur.execute("SELECT username FROM users WHERE username = 'totr'")
+    if cur.fetchone():
+        cur.execute("UPDATE users SET role = 'admin' WHERE username = 'totr'")
+        
     conn.commit()
     conn.close()
 
@@ -229,7 +233,6 @@ HTML_TEMPLATE = """
 
         .chat-container { flex: 1; overflow-y: auto; padding: 25px 15px 85px 15px; display: flex; flex-direction: column; gap: 14px; -webkit-overflow-scrolling: touch; }
         
-        /* ИСПРАВЛЕННЫЕ СООБЩЕНИЯ И ВСПЛЫВАЮЩАЯ ПАНЕЛЬ */
         .message { max-width: 80%; padding: 10px 14px; border-radius: 14px; font-size: 15px; position: relative; display: flex; flex-direction: column; gap: 4px; word-wrap: break-word; user-select: text; margin-top: 5px; }
         .msg-me { background: #1F6AA5; align-self: flex-end; border-bottom-right-radius: 2px; }
         .msg-other { background: #2a2a2a; align-self: flex-start; border-bottom-left-radius: 2px; }
@@ -274,6 +277,7 @@ HTML_TEMPLATE = """
         .audio-meter-bar { height: 100%; width: 0%; background: #4caf50; transition: width 0.04s ease; }
 
         .logout-btn { background: transparent; border: 1px solid #555; color: #aaa; padding: 4px 8px; font-size: 12px; border-radius: 6px; cursor: pointer; width: auto; flex-shrink: 0; margin: 0; }
+        .admin-nav-btn { background: #d32f2f; color: #fff; padding: 6px 10px; font-size: 12px; border-radius: 6px; border: none; font-weight: bold; cursor: pointer; display: none; }
 
         @media (max-width: 600px) {
             #sidebar { position: fixed; left: 0; top: 0; bottom: 0; width: 80%; max-width: 280px; transform: translateX(-100%); }
@@ -323,6 +327,7 @@ HTML_TEMPLATE = """
                     </div>
                 </div>
                 <div style="display:flex; align-items:center; gap:8px;">
+                    <button id="admin-btn" class="admin-nav-btn" onclick="openAdminModal()">⚙️ Админка</button>
                     <span style="font-size:11px; color:#4caf50;">🔒 E2EE</span>
                 </div>
             </header>
@@ -350,7 +355,7 @@ HTML_TEMPLATE = """
         </div>
     </div>
 
-    <!-- МОДАЛЬНОЕ ОКНО ПРОФИЛЯ С ВОССТАНОВЛЕННОЙ СМЕНОЙ ПАРОЛЯ -->
+    <!-- МОДАЛЬНОЕ ОКНО ПРОФИЛЯ -->
     <div id="profile-modal" class="modal-overlay">
         <div class="modal-box">
             <div class="modal-header">
@@ -365,6 +370,19 @@ HTML_TEMPLATE = """
                 <input type="password" id="new-pass" placeholder="Новый пароль">
                 <button onclick="changePassword()" style="background:#2e7d32;">Сохранить новый пароль</button>
                 <div id="pass-status" style="font-size:12px; text-align:center; color:#ff5555;"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- МОДАЛЬНОЕ ОКНО АДМИНКИ -->
+    <div id="admin-modal" class="modal-overlay">
+        <div class="modal-box">
+            <div class="modal-header">
+                <h3>⚙️ Панель Администратора</h3>
+                <button onclick="closeAdminModal()" style="width:auto; padding:4px 10px; background:#444;">✕</button>
+            </div>
+            <div class="modal-body">
+                <p style="font-size:13px; color:#aaa;">Панель администратора готова к работе.</p>
             </div>
         </div>
     </div>
@@ -411,6 +429,7 @@ HTML_TEMPLATE = """
     <script>
         const socket = io();
         let currentUser = "";
+        let userRole = "user";
         let currentTarget = "#general";
         let activeRoomId = null;
         let showRoleFlag = false;
@@ -421,7 +440,7 @@ HTML_TEMPLATE = """
         let audioContext = null;
         let analyser = null;
         let micAnimFrame = null;
-        let audioProcessor = null;
+        let gameRecorder = null;
 
         let mediaRecorder = null;
         let audioChunks = [];
@@ -458,12 +477,17 @@ HTML_TEMPLATE = """
         socket.on('auth_response', (data) => {
             if (data.status === 'ok') {
                 currentUser = data.username;
+                userRole = data.role || 'user';
                 localStorage.setItem('pychat_user', currentUser);
                 localStorage.setItem('pychat_pass', document.getElementById('password').value || localStorage.getItem('pychat_pass'));
                 document.getElementById('auth-screen').style.display = 'none';
                 document.getElementById('app-screen').style.display = 'flex';
                 document.getElementById('user-display').innerText = currentUser;
                 
+                if (userRole === 'admin') {
+                    document.getElementById('admin-btn').style.display = 'inline-block';
+                }
+
                 const myAv = document.getElementById('my-avatar');
                 myAv.innerText = currentUser.charAt(0).toUpperCase();
                 myAv.style.background = getAvatarColor(currentUser);
@@ -707,7 +731,7 @@ HTML_TEMPLATE = """
             });
         }
 
-        /* --- РЕАЛЬНЫЙ ГОЛОСОВОЙ ЧАТ В ИГРЕ МАФИЯ --- */
+        /* --- ИСПРАВЛЕННЫЙ ГОЛОСОВОЙ ЧАТ В ИГРАХ БЕЗ ЭХА И ЗАЦИКЛИВАНИЯ --- */
         function openMafiaModal() {
             closeProfileModal();
             document.getElementById('mafia-modal').style.display = 'flex';
@@ -748,7 +772,7 @@ HTML_TEMPLATE = """
             const btn = document.getElementById('mic-toggle-btn');
             if (isMicOn) {
                 try {
-                    mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    mediaStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
                     btn.innerText = '🎙️ Микрофон ВКЛ';
                     btn.style.background = '#388e3c';
                     startMicMeter(mediaStream);
@@ -767,21 +791,20 @@ HTML_TEMPLATE = """
             audioContext = new (window.AudioContext || window.webkitAudioContext)();
             analyser = audioContext.createAnalyser();
             const source = audioContext.createMediaStreamSource(stream);
-            
-            // Запись и передача аудиопакетов на сервер для воспроизведения другим пользователям
-            audioProcessor = audioContext.createScriptProcessor(2048, 1, 1);
-            source.connect(audioProcessor);
-            audioProcessor.connect(audioContext.destination);
-            
-            audioProcessor.onaudioprocess = (e) => {
-                if (!isMicOn || !activeRoomId) return;
-                const inputData = e.inputBuffer.getChannelData(0);
-                const pcm16 = new Int16Array(inputData.length);
-                for (let i = 0; i < inputData.length; i++) {
-                    pcm16[i] = Math.max(-1, Math.min(1, inputData[i])) * 0x7FFF;
+            source.connect(analyser);
+
+            gameRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' });
+            gameRecorder.ondataavailable = e => {
+                if (e.data.size > 0 && isMicOn && activeRoomId) {
+                    const reader = new FileReader();
+                    reader.onloadend = () => {
+                        const b64 = reader.result.split(',')[1];
+                        socket.emit('voice_chunk', { room_id: activeRoomId, user: currentUser, chunk: b64 });
+                    };
+                    reader.readAsDataURL(e.data);
                 }
-                socket.emit('voice_data', { room_id: activeRoomId, user: currentUser, pcm: Array.from(pcm16) });
             };
+            gameRecorder.start(250);
 
             analyser.fftSize = 64;
             const dataArray = new Uint8Array(analyser.frequencyBinCount);
@@ -803,36 +826,26 @@ HTML_TEMPLATE = """
             updateLevel();
         }
 
-        // Прием и динамическое воспроизведение чужого голоса
-        socket.on('play_voice', (data) => {
+        socket.on('play_voice_chunk', (data) => {
             if (data.user === currentUser) return;
             try {
-                if (!audioContext) audioContext = new (window.AudioContext || window.webkitAudioContext)();
-                const floatData = new Float32Array(data.pcm.length);
-                for (let i = 0; i < data.pcm.length; i++) floatData[i] = data.pcm[i] / 0x7FFF;
-                
-                const buffer = audioContext.createBuffer(1, floatData.length, audioContext.sampleRate);
-                buffer.getChannelData(0).set(floatData);
-                const source = audioContext.createBufferSource();
-                source.buffer = buffer;
-                source.connect(audioContext.destination);
-                source.start();
+                const audio = new Audio("data:audio/webm;base64," + data.chunk);
+                audio.play().catch(e => {});
 
-                // Показываем индикатор активности у говорящего
                 const otherMeter = document.getElementById('meter-bar-' + data.user);
                 const otherBox = document.getElementById('meter-box-' + data.user);
                 if (otherBox && otherMeter) {
                     otherBox.style.display = 'block';
                     otherMeter.style.width = '80%';
-                    setTimeout(() => { otherMeter.style.width = '0%'; }, 200);
+                    setTimeout(() => { otherMeter.style.width = '0%'; }, 250);
                 }
             } catch(e) {}
         });
 
         function stopMicMeter() {
             if (micAnimFrame) cancelAnimationFrame(micAnimFrame);
+            if (gameRecorder && gameRecorder.state !== 'inactive') gameRecorder.stop();
             if (mediaStream) mediaStream.getTracks().forEach(t => t.stop());
-            if (audioProcessor) audioProcessor.disconnect();
             if (audioContext) audioContext.close();
             isMicOn = false;
             
@@ -916,6 +929,8 @@ HTML_TEMPLATE = """
 
         function openProfileModal() { document.getElementById('profile-modal').style.display = 'flex'; }
         function closeProfileModal() { document.getElementById('profile-modal').style.display = 'none'; }
+        function openAdminModal() { document.getElementById('admin-modal').style.display = 'flex'; }
+        function closeAdminModal() { document.getElementById('admin-modal').style.display = 'none'; }
     </script>
 </body>
 </html>
@@ -1046,12 +1061,10 @@ def on_delete_msg(data):
     conn.close()
     emit('msg_deleted', {'msg_id': msg_id}, broadcast=True)
 
-# ТРАНСЛЯЦИЯ ЗВУКА ГОЛОСА МЕЖДУ ИГРОКАМИ
-@socketio.on('voice_data')
-def on_voice_data(data):
-    emit('play_voice', data, broadcast=True)
+@socketio.on('voice_chunk')
+def on_voice_chunk(data):
+    emit('play_voice_chunk', data, broadcast=True)
 
-# SOCKET EVENTS ДЛЯ 5 КОМНАТ МАФИИ
 def broadcast_room_state(room_id):
     room = mafia_rooms[room_id]
     emit('mafia_room_update', {
