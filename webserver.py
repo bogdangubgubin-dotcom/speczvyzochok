@@ -116,7 +116,7 @@ def is_muted(username):
             return True, until
     return False, 0
 
-# --- ДВИЖОК 5 КОМНАТ МАФИИ ---
+# --- ИГРОВОЙ ДВИЖОК 5 КОМНАТ МАФИИ ---
 class MafiaRoom:
     def __init__(self, room_id, name):
         self.room_id = room_id
@@ -171,7 +171,7 @@ class MafiaRoom:
         self.state = 'night'
         self.night_actions = {'mafia': {}, 'doc': None, 'cop': None}
         self.day_votes = {}
-        self.logs = ["Игра началась! Наступила первая ночь."]
+        self.logs = ["Игра началась! Наступила ночь."]
         return True, "Игра запущена!"
 
     def check_win(self):
@@ -244,7 +244,7 @@ HTML_TEMPLATE = """
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-        html, body { width: 100vw; height: 100dvh; overflow: hidden; background: #121212; color: #fff; position: fixed; top: 0; left: 0; }
+        html, body { width: 100%; height: 100%; height: 100dvh; overflow: hidden; background: #121212; color: #fff; position: fixed; }
         
         #auth-screen { display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100dvh; padding: 20px; }
         .auth-box { background: #1e1e1e; padding: 25px; border-radius: 16px; width: 100%; max-width: 340px; text-align: center; border: 1px solid #2d2d2d; }
@@ -257,6 +257,7 @@ HTML_TEMPLATE = """
         .sidebar-header { padding: 12px 15px; background: #1e1e1e; border-bottom: 1px solid #2d2d2d; font-weight: bold; display: flex; justify-content: space-between; align-items: center; }
         .chat-list { flex: 1; overflow-y: auto; padding: 10px; }
         .section-title { font-size: 11px; text-transform: uppercase; color: #888; margin: 12px 8px 6px 8px; font-weight: bold; display: flex; justify-content: space-between; align-items: center; }
+        
         .chat-item { padding: 8px 12px; border-radius: 8px; cursor: pointer; margin-bottom: 4px; display: flex; align-items: center; gap: 10px; font-size: 14px; }
         .chat-item:hover, .chat-item.active { background: #2a2a2a; }
         
@@ -265,19 +266,38 @@ HTML_TEMPLATE = """
         .online { background: #4caf50; } .offline { background: #757575; }
 
         #chat-main { flex: 1; display: flex; flex-direction: column; background: #121212; min-width: 0; height: 100dvh; position: relative; }
-        header { height: 56px; background: #1e1e1e; padding: 0 15px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #2d2d2d; flex-shrink: 0; width: 100%; }
+        header { height: 56px; background: #1e1e1e; padding: 0 15px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #2d2d2d; flex-shrink: 0; }
         .header-left { display: flex; align-items: center; gap: 10px; }
+        .header-title-box { display: flex; flex-direction: column; }
+        .header-status { font-size: 11px; color: #888; }
         .toggle-btn { width: 36px; height: 36px; background: #2a2a2a; border: 1px solid #333; font-size: 16px; border-radius: 8px; color: #fff; cursor: pointer; display: flex; align-items: center; justify-content: center; }
 
-        .chat-container { flex: 1; overflow-y: auto; padding: 15px; padding-bottom: 75px; display: flex; flex-direction: column; gap: 10px; }
-        .message { max-width: 80%; padding: 8px 12px; border-radius: 14px; font-size: 15px; position: relative; }
-        .msg-me { background: #1F6AA5; align-self: flex-end; } .msg-other { background: #2a2a2a; align-self: flex-start; }
-        .msg-sender { font-size: 11px; font-weight: bold; color: #82b1ff; }
+        .search-bar { padding: 6px 12px; background: #181818; border-bottom: 1px solid #2d2d2d; display: flex; gap: 8px; }
+        .search-bar input { margin: 0; padding: 6px 10px; font-size: 13px; height: 32px; }
 
-        footer { position: absolute; bottom: 0; left: 0; right: 0; height: 60px; background: #1e1e1e; padding: 8px 10px; display: flex; gap: 8px; border-top: 1px solid #2d2d2d; align-items: center; z-index: 99; }
-        footer input[type="text"] { flex: 1; height: 42px; background: #2a2a2a; color: #fff; border: 1px solid #333; border-radius: 10px; padding: 0 12px; font-size: 16px; outline: none; }
-        footer button { width: auto; padding: 0 16px; height: 42px; margin: 0; }
+        .chat-container { flex: 1; overflow-y: auto; padding: 15px; padding-bottom: 95px; display: flex; flex-direction: column; gap: 10px; -webkit-overflow-scrolling: touch; }
+        .message { max-width: 80%; padding: 8px 12px; border-radius: 14px; font-size: 15px; position: relative; display: flex; flex-direction: column; gap: 4px; word-wrap: break-word; }
+        .msg-me { background: #1F6AA5; align-self: flex-end; border-bottom-right-radius: 2px; }
+        .msg-other { background: #2a2a2a; align-self: flex-start; border-bottom-left-radius: 2px; }
+        .msg-sender { font-size: 11px; font-weight: bold; color: #82b1ff; }
+        .msg-me .msg-sender { color: #e0e0e0; text-align: right; }
+
+        .msg-actions { display: none; position: absolute; top: -16px; right: 5px; background: #2a2a2a; border-radius: 20px; padding: 4px 8px; gap: 8px; border: 1px solid #555; z-index: 10; max-width: 90vw; overflow-x: auto; }
+        .message:hover .msg-actions, .message:active .msg-actions { display: flex; }
+        .action-btn { cursor: pointer; font-size: 14px; padding: 2px 4px; }
+
+        .reply-preview-box { background: rgba(0,0,0,0.25); border-left: 3px solid #3B8ED0; padding: 4px 8px; border-radius: 4px; font-size: 12px; color: #ddd; margin-bottom: 4px; }
+        .reactions-row { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 4px; }
+        .reaction-badge { background: rgba(0,0,0,0.3); border-radius: 12px; padding: 2px 6px; font-size: 11px; cursor: pointer; display: flex; align-items: center; gap: 3px; border: 1px solid #444; }
+
+        #reply-bar { display: none; background: #222; padding: 6px 12px; border-top: 1px solid #333; justify-content: space-between; align-items: center; font-size: 13px; color: #3B8ED0; }
         
+        footer { position: absolute; bottom: 0; left: 0; right: 0; min-height: 60px; background: #1e1e1e; padding: 8px 10px; display: flex; gap: 8px; border-top: 1px solid #2d2d2d; align-items: center; z-index: 99; }
+        footer input[type="text"] { flex: 1; height: 42px; background: #2a2a2a; color: #fff; border: 1px solid #333; border-radius: 10px; padding: 0 12px; font-size: 16px; outline: none; }
+        footer button { width: auto; padding: 0 14px; height: 42px; margin: 0; }
+        .file-btn, .voice-btn { background: #333; border: 1px solid #444; border-radius: 10px; padding: 0 12px; height: 42px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: #fff; flex-shrink: 0; }
+        .recording { background: #c62828 !important; }
+
         .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100dvh; background: rgba(0,0,0,0.85); z-index: 1000; justify-content: center; align-items: center; padding: 15px; }
         .modal-box { background: #1e1e1e; border: 1px solid #333; border-radius: 12px; width: 100%; max-width: 480px; max-height: 90vh; display: flex; flex-direction: column; overflow: hidden; }
         .modal-header { padding: 15px; background: #252525; border-bottom: 1px solid #333; display: flex; justify-content: space-between; align-items: center; }
@@ -295,6 +315,9 @@ HTML_TEMPLATE = """
         .slot-name { font-size: 11px; font-weight: bold; color: #fff; width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .slot-status { font-size: 10px; color: #aaa; }
 
+        .logout-btn { background: transparent; border: 1px solid #555; color: #aaa; padding: 4px 8px; font-size: 12px; border-radius: 6px; cursor: pointer; }
+        .admin-nav-btn { background: #d32f2f; color: #fff; padding: 6px 10px; font-size: 12px; border-radius: 6px; border: none; font-weight: bold; cursor: pointer; display: none; }
+
         @media (max-width: 600px) {
             #sidebar { position: absolute; left: 0; top: 0; bottom: 0; width: 80%; max-width: 280px; }
             #sidebar.hidden { transform: translateX(-100%); }
@@ -311,6 +334,7 @@ HTML_TEMPLATE = """
             <input type="password" id="password" placeholder="Пароль">
             <button onclick="login()">Войти</button>
             <button onclick="register()" style="background: transparent; border: 1px solid #1F6AA5;">Регистрация</button>
+            <div id="status" style="margin-top:10px; font-size:13px; color:#ff5555;"></div>
         </div>
     </div>
 
@@ -321,7 +345,7 @@ HTML_TEMPLATE = """
                     <div id="my-avatar" class="avatar">?</div>
                     <span id="user-display">...</span>
                 </div>
-                <button onclick="logout()">Выйти</button>
+                <button class="logout-btn" onclick="logout()">Выйти</button>
             </div>
             <div class="chat-list">
                 <div class="section-title">Каналы</div>
@@ -335,20 +359,41 @@ HTML_TEMPLATE = """
             <header>
                 <div class="header-left">
                     <button class="toggle-btn" onclick="toggleSidebar()">☰</button>
-                    <h3 id="chat-title">#general</h3>
+                    <div class="header-title-box">
+                        <h3 id="chat-title">#general</h3>
+                        <span id="chat-status" class="header-status"></span>
+                    </div>
+                </div>
+                <div style="display:flex; align-items:center; gap:8px;">
+                    <button id="admin-btn" class="admin-nav-btn" onclick="openAdminModal()">⚙️ Админка</button>
+                    <span style="font-size:11px; color:#4caf50;">🔒 E2EE</span>
                 </div>
             </header>
 
+            <div class="search-bar">
+                <input type="text" id="search-input" placeholder="🔍 Поиск по сообщениям..." oninput="searchMessages()">
+            </div>
+
             <div class="chat-container" id="messages"></div>
 
+            <div id="reply-bar">
+                <span id="reply-text">Ответ...</span>
+                <button onclick="cancelReply()" style="width:auto; padding:2px 8px; background:transparent; border:none; color:#aaa; cursor:pointer;">✕</button>
+            </div>
+
             <footer>
+                <label class="file-btn" title="Прикрепить файл">
+                    📎
+                    <input type="file" id="file-input" style="display:none;" onchange="sendFile()">
+                </label>
+                <button id="voice-record-btn" class="voice-btn" onclick="toggleVoiceRecord()" title="Голосовое сообщение">🎤</button>
                 <input type="text" id="msg-input" placeholder="Сообщение..." onkeypress="if(event.key==='Enter') sendMsg()">
                 <button onclick="sendMsg()">></button>
             </footer>
         </div>
     </div>
 
-    <!-- Модальное окно Профиля с кнопкой МАФИИ -->
+    <!-- Модальное окно Профиля -->
     <div id="profile-modal" class="modal-overlay">
         <div class="modal-box">
             <div class="modal-header">
@@ -376,7 +421,7 @@ HTML_TEMPLATE = """
                 
                 <!-- СПИСОК 5 КОМНАТ -->
                 <div id="mafia-rooms-screen">
-                    <p style="font-size:13px; color:#aaa; margin-bottom:10px;">Выберите свободной комнату для игры:</p>
+                    <p style="font-size:13px; color:#aaa; margin-bottom:10px;">Выберите свободную комнату для игры:</p>
                     <div id="mafia-rooms-container" style="display:flex; flex-direction:column; gap:8px;"></div>
                 </div>
 
@@ -410,18 +455,20 @@ HTML_TEMPLATE = """
         </div>
     </div>
 
-    <!-- Аудио-элемент голосового чата -->
-    <audio id="remote-audio" autoplay></audio>
-
     <script>
         const socket = io();
         let currentUser = "";
+        let userRole = "user";
         let currentTarget = "#general";
         let activeRoomId = null;
         let showRoleFlag = false;
         let mySecretRole = null;
         let isMicOn = false;
-        let mediaStream = null;
+        let mediaRecorder = null;
+        let audioChunks = [];
+        let isRecording = false;
+        let activeReplyMsg = null;
+        let editingMsgId = null;
 
         function getAvatarColor(name) {
             let hash = 0;
@@ -452,13 +499,21 @@ HTML_TEMPLATE = """
         socket.on('auth_response', (data) => {
             if (data.status === 'ok') {
                 currentUser = data.username;
+                userRole = data.role || 'user';
                 localStorage.setItem('pychat_user', currentUser);
                 localStorage.setItem('pychat_pass', document.getElementById('password').value || localStorage.getItem('pychat_pass'));
                 document.getElementById('auth-screen').style.display = 'none';
                 document.getElementById('app-screen').style.display = 'flex';
                 document.getElementById('user-display').innerText = currentUser;
+                
+                const myAv = document.getElementById('my-avatar');
+                myAv.innerText = currentUser.charAt(0).toUpperCase();
+                myAv.style.background = getAvatarColor(currentUser);
+
                 socket.emit('get_channels');
                 socket.emit('get_users');
+            } else {
+                document.getElementById('status').innerText = data.message;
             }
         });
 
@@ -467,20 +522,104 @@ HTML_TEMPLATE = """
         function sendMsg() {
             const txt = document.getElementById('msg-input').value.trim();
             if (!txt) return;
-            socket.emit('send_msg', { sender: currentUser, target: currentTarget, msg: txt });
+
+            if (editingMsgId) {
+                socket.emit('edit_msg', { msg_id: editingMsgId, new_text: txt, sender: currentUser });
+                cancelReply();
+                return;
+            }
+
+            socket.emit('send_msg', {
+                sender: currentUser, target: currentTarget, msg: txt, msg_type: 'text',
+                reply_to: activeReplyMsg ? activeReplyMsg.id : null,
+                reply_text: activeReplyMsg ? activeReplyMsg.sender + ': ' + activeReplyMsg.text : ''
+            });
             document.getElementById('msg-input').value = '';
+            cancelReply();
+        }
+
+        function cancelReply() {
+            activeReplyMsg = null;
+            editingMsgId = null;
+            document.getElementById('msg-input').value = '';
+            document.getElementById('reply-bar').style.display = 'none';
+        }
+
+        function sendFile() {
+            const file = document.getElementById('file-input').files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const b64Data = e.target.result.split(',')[1];
+                socket.emit('send_msg', {
+                    sender: currentUser, target: currentTarget,
+                    msg: JSON.stringify({ name: file.name, data: b64Data }), msg_type: 'file'
+                });
+                document.getElementById('file-input').value = '';
+            };
+            reader.readAsDataURL(file);
+        }
+
+        async function toggleVoiceRecord() {
+            const btn = document.getElementById('voice-record-btn');
+            if (!isRecording) {
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    mediaRecorder = new MediaRecorder(stream);
+                    audioChunks = [];
+                    mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+                    mediaRecorder.onstop = () => {
+                        const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                        const reader = new FileReader();
+                        reader.onloadend = () => {
+                            socket.emit('send_msg', {
+                                sender: currentUser, target: currentTarget,
+                                msg: reader.result.split(',')[1], msg_type: 'voice'
+                            });
+                        };
+                        reader.readAsDataURL(audioBlob);
+                    };
+                    mediaRecorder.start();
+                    isRecording = true;
+                    btn.classList.add('recording');
+                } catch (err) { alert('Микрофон недоступен: ' + err); }
+            } else {
+                mediaRecorder.stop();
+                isRecording = false;
+                btn.classList.remove('recording');
+            }
         }
 
         socket.on('new_msg', (data) => {
-            const box = document.getElementById('messages');
-            const div = document.createElement('div');
-            div.className = 'message ' + (data.sender === currentUser ? 'msg-me' : 'msg-other');
-            div.innerHTML = `<div class="msg-sender">${data.sender}</div><div>${data.msg}</div>`;
-            box.appendChild(div);
-            box.scrollTop = box.scrollHeight;
+            appendMessage(data);
         });
 
-        /* --- ГОЛОСОВОЙ ЧАТ И ИГРА МАФИЯ --- */
+        function appendMessage(msg) {
+            const box = document.getElementById('messages');
+            const isMe = msg.sender === currentUser;
+            const div = document.createElement('div');
+            div.className = 'message ' + (isMe ? 'msg-me' : 'msg-other');
+            
+            let contentHtml = `<span>${msg.msg}</span>`;
+            if (msg.msg_type === 'file') {
+                try {
+                    const fileData = JSON.parse(msg.msg);
+                    contentHtml = `<a href="data:application/octet-stream;base64,${fileData.data}" download="${fileData.name}" style="color:#fff;">📁 ${fileData.name}</a>`;
+                } catch(e) {}
+            } else if (msg.msg_type === 'voice') {
+                contentHtml = `<audio controls src="data:audio/webm;base64,${msg.msg}" style="height:32px; width:160px;"></audio>`;
+            }
+
+            div.innerHTML = `
+                <div class="msg-sender">${isMe ? 'Вы' : msg.sender}</div>
+                ${contentHtml}
+            `;
+
+            box.appendChild(div);
+            box.scrollTop = box.scrollHeight;
+        }
+
+        /* --- ЛОГИКА КОМНАТ И ГРАФИКИ МАФИИ --- */
         function openMafiaModal() {
             closeProfileModal();
             document.getElementById('mafia-modal').style.display = 'flex';
@@ -513,23 +652,11 @@ HTML_TEMPLATE = """
             document.getElementById('my-role-text').innerText = showRoleFlag ? (mySecretRole || 'Нет роли') : 'Скрыта';
         }
 
-        async function toggleMic() {
+        function toggleMic() {
             isMicOn = !isMicOn;
             const btn = document.getElementById('mic-toggle-btn');
-            if (isMicOn) {
-                try {
-                    mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                    btn.innerText = '🎙️ Микрофон ВКЛ';
-                    btn.style.background = '#388e3c';
-                } catch(err) {
-                    alert('Ошибка доступа к микрофону: ' + err);
-                    isMicOn = false;
-                }
-            } else {
-                if (mediaStream) mediaStream.getTracks().forEach(track => track.stop());
-                btn.innerText = '🔇 Микрофон ВЫКЛ';
-                btn.style.background = '#c62828';
-            }
+            btn.innerText = isMicOn ? '🎙️ Микрофон ВКЛ' : '🔇 Микрофон ВЫКЛ';
+            btn.style.background = isMicOn ? '#388e3c' : '#c62828';
         }
 
         socket.on('mafia_rooms_list', (data) => {
