@@ -10,7 +10,7 @@ from flask_socketio import SocketIO, emit, join_room, leave_room
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'speczvyazok_secret_key_2026'
 
-socketio = SocketIO(app, cors_allowed_origins="*", max_http_buffer_size=10 * 1024 * 1024, async_mode=None)
+socketio = SocketIO(app, cors_allowed_origins="*", max_http_buffer_size=15 * 1024 * 1024, async_mode=None)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, "messenger.db")
@@ -33,7 +33,6 @@ def init_db():
             last_seen INTEGER DEFAULT 0
         )
     """)
-    
     try: cur.execute("ALTER TABLE users ADD COLUMN avatar TEXT DEFAULT ''")
     except sqlite3.OperationalError: pass
 
@@ -66,7 +65,6 @@ def init_db():
             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     """)
-    
     try: cur.execute("ALTER TABLE messages ADD COLUMN ttl INTEGER DEFAULT 0")
     except sqlite3.OperationalError: pass
     try: cur.execute("ALTER TABLE messages ADD COLUMN is_read INTEGER DEFAULT 0")
@@ -245,11 +243,14 @@ HTML_TEMPLATE = """
         .chat-list { flex: 1; overflow-y: auto; padding: 10px; }
         .section-title { font-size: 11px; text-transform: uppercase; color: #888; margin: 12px 8px 6px 8px; font-weight: bold; display: flex; justify-content: space-between; align-items: center; }
         
-        .chat-item { padding: 10px 12px; border-radius: 8px; cursor: pointer; margin-bottom: 4px; display: flex; align-items: center; gap: 10px; font-size: 14px; background: transparent; transition: background 0.2s; }
+        .chat-item { padding: 10px 12px; border-radius: 8px; cursor: pointer; margin-bottom: 4px; display: flex; align-items: center; gap: 10px; font-size: 14px; background: transparent; transition: background 0.2s; position: relative; }
         .chat-item:hover, .chat-item.active { background: var(--item-hover); }
+        .chat-item.pinned-chat { border-left: 3px solid #3B8ED0; }
         
+        .unread-badge { background: #e53935; color: #fff; font-size: 11px; font-weight: bold; border-radius: 10px; padding: 2px 7px; margin-left: auto; }
+
         .avatar { width: 34px; height: 34px; border-radius: 50%; background: #3B8ED0; display: flex; align-items: center; justify-content: center; font-weight: bold; color: #fff; font-size: 14px; flex-shrink: 0; background-size: cover; background-position: center; cursor: pointer; }
-        .status-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-left: auto; }
+        .status-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-left: 4px; }
         .online { background: #4caf50; } .offline { background: #757575; }
 
         #chat-main { flex: 1; display: flex; flex-direction: column; background: var(--bg-color); min-width: 0; height: 100dvh; position: relative; }
@@ -270,6 +271,9 @@ HTML_TEMPLATE = """
         .msg-header { display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: bold; color: #82b1ff; }
         .msg-me .msg-header { justify-content: flex-end; color: #e0e0e0; }
         .msg-avatar { width: 18px; height: 18px; border-radius: 50%; background-size: cover; background-position: center; display: inline-block; cursor: pointer; }
+
+        /* КВАДРАТНЫЕ ВИДЕОСООБЩЕНИЯ */
+        .video-note { width: 220px; height: 220px; border-radius: 16px; object-fit: cover; border: 2px solid var(--panel-border); background: #000; }
 
         .msg-status { font-size: 10px; align-self: flex-end; margin-top: 2px; opacity: 0.8; }
         .msg-me .msg-status { color: #bbdefb; }
@@ -325,6 +329,9 @@ HTML_TEMPLATE = """
         #lightbox { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100dvh; background: rgba(0,0,0,0.9); z-index: 2000; justify-content: center; align-items: center; }
         #lightbox img { max-width: 90%; max-height: 90%; border-radius: 8px; box-shadow: 0 0 20px rgba(0,0,0,0.8); }
 
+        .media-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 10px; }
+        .media-grid-item { width: 100%; height: 90px; border-radius: 8px; background-size: cover; background-position: center; cursor: pointer; border: 1px solid var(--panel-border); }
+
         @media (max-width: 600px) {
             #sidebar { position: fixed; left: 0; top: 0; bottom: 0; width: 80%; max-width: 280px; transform: translateX(-100%); }
             #sidebar.open { transform: translateX(0); }
@@ -377,6 +384,7 @@ HTML_TEMPLATE = """
                     </div>
                 </div>
                 <div style="display:flex; align-items:center; gap:8px;">
+                    <button class="icon-btn" style="height:32px; padding:0 8px; font-size:13px;" onclick="openGalleryModal()">🖼️ Медиа</button>
                     <button id="admin-btn" class="admin-nav-btn" onclick="openAdminModal()">⚙️ Админка</button>
                     <span style="font-size:11px; color:#4caf50;">🔒 E2EE</span>
                 </div>
@@ -411,8 +419,9 @@ HTML_TEMPLATE = """
                     <input type="file" id="file-input" style="display:none;" onchange="sendFile()">
                 </label>
                 <button id="voice-record-btn" class="icon-btn" onclick="toggleVoiceRecord()" title="Голосовое сообщение">🎤</button>
+                <button id="video-record-btn" class="icon-btn" onclick="toggleVideoNoteRecord()" title="Квадратное видеосообщение">📹</button>
                 <button class="icon-btn" onclick="toggleEmojiPicker()" title="Смайлики">😀</button>
-                <select id="ttl-select" class="icon-btn" style="padding:0 4px; font-size:12px;" title="Таймер уничтожения сообщения">
+                <select id="ttl-select" class="icon-btn" style="padding:0 4px; font-size:12px;" title="Таймер уничтожения">
                     <option value="0">Off</option>
                     <option value="10">10s</option>
                     <option value="60">1m</option>
@@ -423,7 +432,20 @@ HTML_TEMPLATE = """
         </div>
     </div>
 
-    <!-- МОДАЛЬНОЕ ОКНО СМОТРА ПРОФИЛЯ ПОЛЬЗОВАТЕЛЯ -->
+    <!-- МЕДИА-ГАЛЕРЕЯ ЧАТА -->
+    <div id="gallery-modal" class="modal-overlay">
+        <div class="modal-box">
+            <div class="modal-header">
+                <h3>🖼️ Галерея медиафайлов</h3>
+                <button onclick="closeGalleryModal()" style="width:auto; padding:4px 10px; background:#444;">✕</button>
+            </div>
+            <div class="modal-body">
+                <div id="gallery-container" class="media-grid"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- КАРТОЧКА ПОЛЬЗОВАТЕЛЯ -->
     <div id="user-info-modal" class="modal-overlay">
         <div class="modal-box">
             <div class="modal-header">
@@ -541,11 +563,16 @@ HTML_TEMPLATE = """
         let peerConnections = {};
 
         let mediaRecorder = null;
+        let videoRecorder = null;
         let audioChunks = [];
+        let videoChunks = [];
         let isRecording = false;
+        let isVideoRecording = false;
         let activeReplyMsg = null;
         let allLoadedMessages = {};
         let userAvatarsMap = {};
+        let pinnedChats = JSON.parse(localStorage.getItem('pychat_pinned') || '[]');
+        let unreadCounts = {};
         let typingTimeout = null;
 
         const iceServers = { 
@@ -694,10 +721,12 @@ HTML_TEMPLATE = """
 
         function switchChat(target) {
             currentTarget = target;
-            document.getElementById('chat-title').innerText = target.startsWith('#') ? target : '@' + target;
+            unreadCounts[target] = 0;
+            document.getElementById('chat-title').innerText = target.startsWith('#') ? target : (target === currentUser ? '📁 Сохраненные сообщения' : '@' + target);
             document.getElementById('messages').innerHTML = '';
             closeSidebar();
             socket.emit('load_history', { user: currentUser, target: currentTarget });
+            socket.emit('get_users');
         }
 
         socket.on('history_loaded', (data) => {
@@ -728,13 +757,28 @@ HTML_TEMPLATE = """
             }
         });
 
+        function togglePinChat(target) {
+            if (pinnedChats.includes(target)) pinnedChats = pinnedChats.filter(c => c !== target);
+            else pinnedChats.push(target);
+            localStorage.setItem('pychat_pinned', JSON.stringify(pinnedChats));
+            socket.emit('get_channels');
+            socket.emit('get_users');
+        }
+
         socket.on('channels_list', (data) => {
             const list = document.getElementById('channels-list');
             list.innerHTML = '';
-            data.channels.forEach(ch => {
+            const sorted = [...data.channels].sort((a,b) => pinnedChats.includes(b) - pinnedChats.includes(a));
+            sorted.forEach(ch => {
+                const isPinned = pinnedChats.includes(ch);
+                const unread = unreadCounts[ch] || 0;
                 const div = document.createElement('div');
-                div.className = 'chat-item' + (ch === currentTarget ? ' active' : '');
-                div.innerText = ch;
+                div.className = 'chat-item' + (ch === currentTarget ? ' active' : '') + (isPinned ? ' pinned-chat' : '');
+                div.innerHTML = `
+                    <span>${ch}</span>
+                    ${unread > 0 ? `<span class="unread-badge">${unread}</span>` : ''}
+                    <button onclick="event.stopPropagation(); togglePinChat('${ch}')" style="width:auto; background:transparent; padding:0; border:none; font-size:12px; margin-left:4px;">📌</button>
+                `;
                 div.onclick = () => switchChat(ch);
                 list.appendChild(div);
             });
@@ -743,12 +787,24 @@ HTML_TEMPLATE = """
         socket.on('users_list', (data) => {
             const list = document.getElementById('users-list');
             list.innerHTML = '';
-            data.users.forEach(u => {
+            
+            // ДОБАВЛЯЕМ "СОХРАНЕННЫЕ СООБЩЕНИЯ" (ИЗБРАННОЕ)
+            const savedDiv = document.createElement('div');
+            savedDiv.className = 'chat-item' + (currentTarget === currentUser ? ' active' : '');
+            savedDiv.innerHTML = `<div class="avatar" style="background:#3B8ED0;">📁</div><span>Избранное</span>`;
+            savedDiv.onclick = () => switchChat(currentUser);
+            list.appendChild(savedDiv);
+
+            const sortedUsers = [...data.users].sort((a,b) => pinnedChats.includes(b.username) - pinnedChats.includes(a.username));
+
+            sortedUsers.forEach(u => {
                 if (u.avatar) userAvatarsMap[u.username] = u.avatar;
                 if (u.username === currentUser) return;
 
+                const isPinned = pinnedChats.includes(u.username);
+                const unread = unreadCounts[u.username] || 0;
                 const div = document.createElement('div');
-                div.className = 'chat-item' + (u.username === currentTarget ? ' active' : '');
+                div.className = 'chat-item' + (u.username === currentTarget ? ' active' : '') + (isPinned ? ' pinned-chat' : '');
                 const avDiv = document.createElement('div');
                 avDiv.className = 'avatar';
                 setAvatarElement(avDiv, u.username);
@@ -757,6 +813,8 @@ HTML_TEMPLATE = """
                 div.innerHTML += `
                     <span>${u.username}</span>
                     <span class="status-dot ${u.online ? 'online' : 'offline'}"></span>
+                    ${unread > 0 ? `<span class="unread-badge">${unread}</span>` : ''}
+                    <button onclick="event.stopPropagation(); togglePinChat('${u.username}')" style="width:auto; background:transparent; padding:0; border:none; font-size:12px; margin-left:4px;">📌</button>
                 `;
                 div.onclick = () => switchChat(u.username);
                 list.appendChild(div);
@@ -773,6 +831,28 @@ HTML_TEMPLATE = """
             document.getElementById('user-info-modal').style.display = 'flex';
         }
         function closeUserInfoModal() { document.getElementById('user-info-modal').style.display = 'none'; }
+
+        function openGalleryModal() {
+            const container = document.getElementById('gallery-container');
+            container.innerHTML = '';
+            for (let id in allLoadedMessages) {
+                const msg = allLoadedMessages[id];
+                if (msg.msg_type === 'file') {
+                    try {
+                        const fileData = JSON.parse(msg.msg);
+                        if (fileData.name.match(/\.(jpg|jpeg|png|gif|webp)$/i)) {
+                            const item = document.createElement('div');
+                            item.className = 'media-grid-item';
+                            item.style.backgroundImage = `url('data:image/jpeg;base64,${fileData.data}')`;
+                            item.onclick = () => openLightbox(`data:image/jpeg;base64,${fileData.data}`);
+                            container.appendChild(item);
+                        }
+                    } catch(e){}
+                }
+            }
+            document.getElementById('gallery-modal').style.display = 'flex';
+        }
+        function closeGalleryModal() { document.getElementById('gallery-modal').style.display = 'none'; }
 
         function changePassword() {
             const oldP = document.getElementById('old-pass').value.trim();
@@ -900,9 +980,47 @@ HTML_TEMPLATE = """
             }
         }
 
+        // КВАДРАТНОЕ ВИДЕОСООБЩЕНИЕ
+        async function toggleVideoNoteRecord() {
+            const btn = document.getElementById('video-record-btn');
+            if (!isVideoRecording) {
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 300, height: 300 }, audio: true });
+                    videoRecorder = new MediaRecorder(stream);
+                    videoChunks = [];
+                    videoRecorder.ondataavailable = e => videoChunks.push(e.data);
+                    videoRecorder.onstop = () => {
+                        const videoBlob = new Blob(videoChunks, { type: 'video/webm' });
+                        const reader = new FileReader();
+                        reader.onloadend = () => {
+                            socket.emit('send_msg', {
+                                sender: currentUser, target: currentTarget,
+                                msg: reader.result.split(',')[1], msg_type: 'video_note'
+                            });
+                        };
+                        reader.readAsDataURL(videoBlob);
+                        stream.getTracks().forEach(t => t.stop());
+                    };
+                    videoRecorder.start();
+                    isVideoRecording = true;
+                    btn.classList.add('recording');
+                } catch (err) { alert('Камера/микрофон недоступны: ' + err); }
+            } else {
+                videoRecorder.stop();
+                isVideoRecording = false;
+                btn.classList.remove('recording');
+            }
+        }
+
         socket.on('new_msg', (data) => { 
             if (data.sender !== currentUser) {
                 playNotificationSound();
+                if (data.target !== currentTarget && data.sender !== currentTarget) {
+                    const chatKey = data.target.startsWith('#') ? data.target : data.sender;
+                    unreadCounts[chatKey] = (unreadCounts[chatKey] || 0) + 1;
+                    socket.emit('get_channels');
+                    socket.emit('get_users');
+                }
                 if (document.hidden && Notification.permission === "granted") {
                     new Notification("Сообщение от " + data.sender, { body: data.msg });
                 }
@@ -938,10 +1056,16 @@ HTML_TEMPLATE = """
             if (msg.msg_type === 'file') {
                 try {
                     const fileData = JSON.parse(msg.msg);
-                    contentHtml = `<a href="data:application/octet-stream;base64,${fileData.data}" download="${fileData.name}" style="color:#fff;">📁 ${fileData.name}</a>`;
+                    if (fileData.name.match(/\.(jpg|jpeg|png|gif|webp)$/i)) {
+                        contentHtml = `<img src="data:image/jpeg;base64,${fileData.data}" style="max-width:200px; border-radius:8px; cursor:pointer;" onclick="openLightbox(this.src)">`;
+                    } else {
+                        contentHtml = `<a href="data:application/octet-stream;base64,${fileData.data}" download="${fileData.name}" style="color:#fff;">📁 ${fileData.name}</a>`;
+                    }
                 } catch(e) {}
             } else if (msg.msg_type === 'voice') {
                 contentHtml = `<audio controls playsinline src="data:audio/webm;base64,${msg.msg}" style="height:32px; width:180px;"></audio>`;
+            } else if (msg.msg_type === 'video_note') {
+                contentHtml = `<video class="video-note" controls playsinline src="data:video/webm;base64,${msg.msg}"></video>`;
             }
 
             let ttlBadge = msg.ttl > 0 ? `<span style="font-size:10px; color:#ff9800;"> 💣 (${msg.ttl}s)</span>` : '';
@@ -1342,8 +1466,7 @@ def on_get_users():
     emit('users_list', {'users': users}, broadcast=True)
 
 @socketio.on('user_typing')
-def on_user_typing(data):
-    emit('display_typing', data, room=data['target'], include_self=False)
+def on_user_typing(data): emit('display_typing', data, room=data['target'], include_self=False)
 
 @socketio.on('pin_msg')
 def on_pin_msg(data):
