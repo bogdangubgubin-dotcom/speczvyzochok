@@ -9,7 +9,9 @@ from flask_socketio import SocketIO, emit, join_room, leave_room
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'speczvyazok_secret_key_2026'
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode=None)
+
+# РАЗРЕШАЕМ ПЕРЕДАЧУ БОЛЬШИХ ИЗОБРАЖЕНИЙ (ДО 10 МБ)
+socketio = SocketIO(app, cors_allowed_origins="*", max_http_buffer_size=10 * 1024 * 1024, async_mode=None)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, "messenger.db")
@@ -33,7 +35,6 @@ def init_db():
         )
     """)
     
-    # Авто-миграция для старых баз: добавление колонки avatar если её нет
     try:
         cur.execute("ALTER TABLE users ADD COLUMN avatar TEXT DEFAULT ''")
     except sqlite3.OperationalError:
@@ -366,7 +367,7 @@ HTML_TEMPLATE = """
         </div>
     </div>
 
-    <!-- МОДАЛЬНОЕ ОКНО ПРОФИЛЯ С ЗАГРУЗКОЙ АВАТАРКИ -->
+    <!-- МОДАЛЬНОЕ ОКНО ПРОФИЛЯ -->
     <div id="profile-modal" class="modal-overlay">
         <div class="modal-box">
             <div class="modal-header">
@@ -467,7 +468,7 @@ HTML_TEMPLATE = """
         let isRecording = false;
         let activeReplyMsg = null;
         let allLoadedMessages = {};
-        let userAvatarsMap = {}; // Карта аватарок пользователей
+        let userAvatarsMap = {};
 
         const iceServers = { 
             iceServers: [
@@ -500,7 +501,7 @@ HTML_TEMPLATE = """
 
         function setAvatarElement(elem, username) {
             const avatarUrl = userAvatarsMap[username];
-            if (avatarUrl) {
+            if (avatarUrl && avatarUrl.length > 10) {
                 elem.style.backgroundImage = `url('${avatarUrl}')`;
                 elem.innerText = '';
             } else {
@@ -551,13 +552,26 @@ HTML_TEMPLATE = """
             }
         });
 
+        // ЗАГРУЗКА И СЖАТИЕ АВАТАРКИ ПЕРЕД ОТПРАВКОЙ
         function uploadAvatar() {
             const file = document.getElementById('avatar-input').files[0];
             if (!file) return;
+
+            const img = new Image();
             const reader = new FileReader();
+
             reader.onload = function(e) {
-                const b64 = e.target.result;
-                socket.emit('update_avatar', { user: currentUser, avatar: b64 });
+                img.src = e.target.result;
+                img.onload = function() {
+                    const canvas = document.createElement('canvas');
+                    const ctx = canvas.getContext('2d');
+                    canvas.width = 200;
+                    canvas.height = 200;
+                    ctx.drawImage(img, 0, 0, 200, 200);
+                    
+                    const compressedB64 = canvas.toDataURL('image/jpeg', 0.8);
+                    socket.emit('update_avatar', { user: currentUser, avatar: compressedB64 });
+                };
             };
             reader.readAsDataURL(file);
         }
@@ -756,7 +770,7 @@ HTML_TEMPLATE = """
             let deleteBtn = isMe ? `<button class="action-btn" onclick="deleteMessage(${msg.id})">🗑️</button>` : '';
 
             const avatarUrl = userAvatarsMap[msg.sender];
-            let msgAvStyle = avatarUrl ? `background-image:url('${avatarUrl}')` : `background-color:${getAvatarColor(msg.sender)}`;
+            let msgAvStyle = (avatarUrl && avatarUrl.length > 10) ? `background-image:url('${avatarUrl}')` : `background-color:${getAvatarColor(msg.sender)}`;
 
             div.innerHTML = `
                 <div class="msg-actions">
@@ -821,7 +835,7 @@ HTML_TEMPLATE = """
             });
         }
 
-        /* --- WEBRTC И МАФИЯ С АВАТАРКАМИ --- */
+        /* --- WEBRTC --- */
         function openMafiaModal() {
             closeProfileModal();
             document.getElementById('mafia-modal').style.display = 'flex';
