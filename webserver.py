@@ -272,7 +272,6 @@ HTML_TEMPLATE = """
         .msg-me .msg-header { justify-content: flex-end; color: #e0e0e0; }
         .msg-avatar { width: 18px; height: 18px; border-radius: 50%; background-size: cover; background-position: center; display: inline-block; cursor: pointer; }
 
-        /* КВАДРАТНЫЕ ВИДЕОСООБЩЕНИЯ */
         .video-note { width: 220px; height: 220px; border-radius: 16px; object-fit: cover; border: 2px solid var(--panel-border); background: #000; }
 
         .msg-status { font-size: 10px; align-self: flex-end; margin-top: 2px; opacity: 0.8; }
@@ -317,7 +316,7 @@ HTML_TEMPLATE = """
         .audio-meter-bar { height: 100%; width: 0%; background: #4caf50; transition: width 0.04s ease; }
 
         .logout-btn { background: transparent; border: 1px solid #555; color: #aaa; padding: 4px 8px; font-size: 12px; border-radius: 6px; cursor: pointer; width: auto; flex-shrink: 0; margin: 0; }
-        .admin-nav-btn { background: #d32f2f; color: #fff; padding: 6px 10px; font-size: 12px; border-radius: 6px; border: none; font-weight: bold; cursor: pointer; display: inline-block; }
+        .admin-nav-btn { background: #d32f2f; color: #fff; padding: 6px 10px; font-size: 12px; border-radius: 6px; border: none; font-weight: bold; cursor: pointer; display: none; }
 
         .avatar-upload-box { display: flex; flex-direction: column; align-items: center; gap: 10px; margin-bottom: 10px; }
         .big-avatar { width: 70px; height: 70px; border-radius: 50%; background: #3B8ED0; display: flex; align-items: center; justify-content: center; font-size: 28px; font-weight: bold; color: #fff; background-size: cover; background-position: center; border: 2px solid #555; }
@@ -331,6 +330,8 @@ HTML_TEMPLATE = """
 
         .media-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 10px; }
         .media-grid-item { width: 100%; height: 90px; border-radius: 8px; background-size: cover; background-position: center; cursor: pointer; border: 1px solid var(--panel-border); }
+
+        .admin-user-row { display: flex; justify-content: space-between; align-items: center; background: var(--item-hover); padding: 8px 12px; border-radius: 8px; border: 1px solid var(--panel-border); font-size: 13px; }
 
         @media (max-width: 600px) {
             #sidebar { position: fixed; left: 0; top: 0; bottom: 0; width: 80%; max-width: 280px; transform: translateX(-100%); }
@@ -375,7 +376,7 @@ HTML_TEMPLATE = """
         </div>
 
         <div id="chat-main" onclick="closeSidebar()">
-            <header>
+            header>
                 <div class="header-left">
                     <button class="toggle-btn" onclick="event.stopPropagation(); toggleSidebar();">☰</button>
                     <div class="header-title-box">
@@ -498,7 +499,8 @@ HTML_TEMPLATE = """
                 <button onclick="closeAdminModal()" style="width:auto; padding:4px 10px; background:#444;">✕</button>
             </div>
             <div class="modal-body">
-                <p style="font-size:13px; color:#aaa;">Панель администратора активна.</p>
+                <p style="font-size:13px; color:#aaa; margin-bottom:10px;">Управление пользователями системы:</p>
+                <div id="admin-users-list" style="display:flex; flex-direction:column; gap:8px;"></div>
             </div>
         </div>
     </div>
@@ -550,6 +552,7 @@ HTML_TEMPLATE = """
         const socket = io();
         let currentUser = "";
         let currentTarget = "#general";
+        let userRole = "user";
         let activeRoomId = null;
         let showRoleFlag = false;
         let mySecretRole = null;
@@ -657,11 +660,16 @@ HTML_TEMPLATE = """
         socket.on('auth_response', (data) => {
             if (data.status === 'ok') {
                 currentUser = data.username;
+                userRole = data.role;
                 localStorage.setItem('pychat_user', currentUser);
                 localStorage.setItem('pychat_pass', document.getElementById('password').value || localStorage.getItem('pychat_pass'));
                 document.getElementById('auth-screen').style.display = 'none';
                 document.getElementById('app-screen').style.display = 'flex';
                 document.getElementById('user-display').innerText = currentUser;
+
+                if (userRole === 'admin') {
+                    document.getElementById('admin-btn').style.display = 'inline-block';
+                }
 
                 if (data.avatar) userAvatarsMap[currentUser] = data.avatar;
                 setAvatarElement(document.getElementById('my-avatar'), currentUser);
@@ -788,7 +796,6 @@ HTML_TEMPLATE = """
             const list = document.getElementById('users-list');
             list.innerHTML = '';
             
-            // ДОБАВЛЯЕМ "СОХРАНЕННЫЕ СООБЩЕНИЯ" (ИЗБРАННОЕ)
             const savedDiv = document.createElement('div');
             savedDiv.className = 'chat-item' + (currentTarget === currentUser ? ' active' : '');
             savedDiv.innerHTML = `<div class="avatar" style="background:#3B8ED0;">📁</div><span>Избранное</span>`;
@@ -853,6 +860,45 @@ HTML_TEMPLATE = """
             document.getElementById('gallery-modal').style.display = 'flex';
         }
         function closeGalleryModal() { document.getElementById('gallery-modal').style.display = 'none'; }
+
+        /* --- ФУНКЦИОНАЛ АДМИНКИ --- */
+        function openAdminModal() {
+            if (userRole !== 'admin') return;
+            document.getElementById('admin-modal').style.display = 'flex';
+            socket.emit('admin_get_users');
+        }
+        function closeAdminModal() { document.getElementById('admin-modal').style.display = 'none'; }
+
+        socket.on('admin_users_data', (data) => {
+            const container = document.getElementById('admin-users-list');
+            container.innerHTML = '';
+            data.users.forEach(u => {
+                const row = document.createElement('div');
+                row.className = 'admin-user-row';
+                row.innerHTML = `
+                    <div>
+                        <b>${u.username}</b> <span style="font-size:11px; color:#aaa;">(${u.role})</span>
+                    </div>
+                    <div style="display:flex; gap:6px;">
+                        <button onclick="adminSetRole('${u.username}', '${u.role === 'admin' ? 'user' : 'admin'}')" style="width:auto; padding:4px 8px; font-size:11px; background:#1F6AA5;">
+                            ${u.role === 'admin' ? 'Сделать User' : 'Сделать Admin'}
+                        </button>
+                        ${u.username !== currentUser ? `<button onclick="adminDeleteUser('${u.username}')" style="width:auto; padding:4px 8px; font-size:11px; background:#d32f2f;">Удалить</button>` : ''}
+                    </div>
+                `;
+                container.appendChild(row);
+            });
+        });
+
+        function adminSetRole(uname, newRole) {
+            socket.emit('admin_change_role', { admin: currentUser, target_user: uname, role: newRole });
+        }
+
+        function adminDeleteUser(uname) {
+            if (confirm(`Вы уверены, что хотите удалить пользователя ${uname}?`)) {
+                socket.emit('admin_delete_user', { admin: currentUser, target_user: uname });
+            }
+        }
 
         function changePassword() {
             const oldP = document.getElementById('old-pass').value.trim();
@@ -980,7 +1026,6 @@ HTML_TEMPLATE = """
             }
         }
 
-        // КВАДРАТНОЕ ВИДЕОСООБЩЕНИЕ
         async function toggleVideoNoteRecord() {
             const btn = document.getElementById('video-record-btn');
             if (!isVideoRecording) {
@@ -1350,8 +1395,6 @@ HTML_TEMPLATE = """
 
         function openProfileModal() { document.getElementById('profile-modal').style.display = 'flex'; }
         function closeProfileModal() { document.getElementById('profile-modal').style.display = 'none'; }
-        function openAdminModal() { document.getElementById('admin-modal').style.display = 'flex'; }
-        function closeAdminModal() { document.getElementById('admin-modal').style.display = 'none'; }
     </script>
 </body>
 </html>
@@ -1396,6 +1439,44 @@ def on_register(data):
         emit('auth_response', {'status': 'error', 'message': 'Успешно! Теперь войдите.'})
     except sqlite3.IntegrityError: emit('auth_response', {'status': 'error', 'message': 'Логин занят'})
     finally: conn.close()
+
+@socketio.on('admin_get_users')
+def on_admin_get_users():
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT username, role FROM users")
+    users = [{'username': r[0], 'role': r[1]} for r in cur.fetchall()]
+    conn.close()
+    emit('admin_users_data', {'users': users})
+
+@socketio.on('admin_change_role')
+def on_admin_change_role(data):
+    admin = data['admin']
+    target_user = data['target_user']
+    new_role = data['role']
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT role FROM users WHERE username = ?", (admin,))
+    row = cur.fetchone()
+    if row and row[0] == 'admin':
+        cur.execute("UPDATE users SET role = ? WHERE username = ?", (new_role, target_user))
+        conn.commit()
+    conn.close()
+    on_admin_get_users()
+
+@socketio.on('admin_delete_user')
+def on_admin_delete_user(data):
+    admin = data['admin']
+    target_user = data['target_user']
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT role FROM users WHERE username = ?", (admin,))
+    row = cur.fetchone()
+    if row and row[0] == 'admin':
+        cur.execute("DELETE FROM users WHERE username = ?", (target_user,))
+        conn.commit()
+    conn.close()
+    on_admin_get_users()
 
 @socketio.on('update_avatar')
 def on_update_avatar(data):
