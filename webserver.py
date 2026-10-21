@@ -28,10 +28,17 @@ def init_db():
             password_hash TEXT NOT NULL,
             salt TEXT NOT NULL,
             role TEXT DEFAULT 'user',
+            avatar TEXT DEFAULT '',
             last_seen INTEGER DEFAULT 0
         )
     """)
     
+    # Авто-миграция для старых баз: добавление колонки avatar если её нет
+    try:
+        cur.execute("ALTER TABLE users ADD COLUMN avatar TEXT DEFAULT ''")
+    except sqlite3.OperationalError:
+        pass
+
     cur.execute("""
         CREATE TABLE IF NOT EXISTS channels (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -219,7 +226,7 @@ HTML_TEMPLATE = """
         .chat-item { padding: 10px 12px; border-radius: 8px; cursor: pointer; margin-bottom: 4px; display: flex; align-items: center; gap: 10px; font-size: 14px; background: transparent; transition: background 0.2s; }
         .chat-item:hover, .chat-item.active { background: #2a2a2a; }
         
-        .avatar { width: 34px; height: 34px; border-radius: 50%; background: #3B8ED0; display: flex; align-items: center; justify-content: center; font-weight: bold; color: #fff; font-size: 14px; flex-shrink: 0; }
+        .avatar { width: 34px; height: 34px; border-radius: 50%; background: #3B8ED0; display: flex; align-items: center; justify-content: center; font-weight: bold; color: #fff; font-size: 14px; flex-shrink: 0; background-size: cover; background-position: center; }
         .status-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-left: auto; }
         .online { background: #4caf50; } .offline { background: #757575; }
 
@@ -236,8 +243,9 @@ HTML_TEMPLATE = """
         .message { max-width: 80%; padding: 10px 14px; border-radius: 14px; font-size: 15px; position: relative; display: flex; flex-direction: column; gap: 4px; word-wrap: break-word; user-select: text; margin-top: 5px; }
         .msg-me { background: #1F6AA5; align-self: flex-end; border-bottom-right-radius: 2px; }
         .msg-other { background: #2a2a2a; align-self: flex-start; border-bottom-left-radius: 2px; }
-        .msg-sender { font-size: 11px; font-weight: bold; color: #82b1ff; }
-        .msg-me .msg-sender { color: #e0e0e0; text-align: right; }
+        .msg-header { display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: bold; color: #82b1ff; }
+        .msg-me .msg-header { justify-content: flex-end; color: #e0e0e0; }
+        .msg-avatar { width: 18px; height: 18px; border-radius: 50%; background-size: cover; background-position: center; display: inline-block; }
 
         .msg-actions { display: none; position: absolute; top: -26px; right: 0; background: #1e1e1e; border-radius: 12px; padding: 3px 8px; gap: 8px; border: 1px solid #444; z-index: 50; box-shadow: 0 4px 10px rgba(0,0,0,0.5); }
         .message:hover .msg-actions, .message:focus .msg-actions, .message.active-touch .msg-actions { display: flex; }
@@ -269,7 +277,7 @@ HTML_TEMPLATE = """
         .poker-table { background: #1b4332; border: 6px solid #2d6a4f; border-radius: 120px; padding: 15px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; justify-items: center; align-items: center; margin: 10px 0; }
         .table-slot { width: 90px; height: 110px; background: rgba(0,0,0,0.4); border: 2px dashed #40916c; border-radius: 12px; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 6px; text-align: center; position: relative; }
         .table-slot.occupied { border-style: solid; border-color: #52b788; background: rgba(0,0,0,0.7); }
-        .slot-avatar { width: 42px; height: 42px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 16px; margin-bottom: 2px; }
+        .slot-avatar { width: 42px; height: 42px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 16px; margin-bottom: 2px; background-size: cover; background-position: center; }
         .slot-name { font-size: 11px; font-weight: bold; color: #fff; width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .slot-status { font-size: 10px; color: #aaa; }
 
@@ -278,6 +286,9 @@ HTML_TEMPLATE = """
 
         .logout-btn { background: transparent; border: 1px solid #555; color: #aaa; padding: 4px 8px; font-size: 12px; border-radius: 6px; cursor: pointer; width: auto; flex-shrink: 0; margin: 0; }
         .admin-nav-btn { background: #d32f2f; color: #fff; padding: 6px 10px; font-size: 12px; border-radius: 6px; border: none; font-weight: bold; cursor: pointer; display: inline-block; }
+
+        .avatar-upload-box { display: flex; flex-direction: column; align-items: center; gap: 10px; margin-bottom: 10px; }
+        .big-avatar { width: 70px; height: 70px; border-radius: 50%; background: #3B8ED0; display: flex; align-items: center; justify-content: center; font-size: 28px; font-weight: bold; color: #fff; background-size: cover; background-position: center; border: 2px solid #555; }
 
         @media (max-width: 600px) {
             #sidebar { position: fixed; left: 0; top: 0; bottom: 0; width: 80%; max-width: 280px; transform: translateX(-100%); }
@@ -355,7 +366,7 @@ HTML_TEMPLATE = """
         </div>
     </div>
 
-    <!-- МОДАЛЬНОЕ ОКНО ПРОФИЛЯ -->
+    <!-- МОДАЛЬНОЕ ОКНО ПРОФИЛЯ С ЗАГРУЗКОЙ АВАТАРКИ -->
     <div id="profile-modal" class="modal-overlay">
         <div class="modal-box">
             <div class="modal-header">
@@ -363,7 +374,15 @@ HTML_TEMPLATE = """
                 <button onclick="closeProfileModal()" style="width:auto; padding:4px 10px; background:#444;">✕</button>
             </div>
             <div class="modal-body">
-                <button onclick="openMafiaModal()" style="background:#8e24aa; margin-bottom:15px; padding:12px;">🕵️ Игра «Мафия»</button>
+                <div class="avatar-upload-box">
+                    <div id="profile-big-avatar" class="big-avatar">?</div>
+                    <label style="background:#333; padding:6px 12px; border-radius:8px; border:1px solid #555; font-size:12px; cursor:pointer;">
+                        📷 Изменить аватарку
+                        <input type="file" id="avatar-input" accept="image/*" style="display:none;" onchange="uploadAvatar()">
+                    </label>
+                </div>
+
+                <button onclick="openMafiaModal()" style="background:#8e24aa; margin-bottom:10px; padding:12px;">🕵️ Игра «Мафия»</button>
                 <hr style="border:0; border-top:1px solid #333; margin:10px 0;">
                 <h4 style="font-size:14px; color:#aaa;">Смена пароля</h4>
                 <input type="password" id="old-pass" placeholder="Старый пароль">
@@ -448,8 +467,8 @@ HTML_TEMPLATE = """
         let isRecording = false;
         let activeReplyMsg = null;
         let allLoadedMessages = {};
+        let userAvatarsMap = {}; // Карта аватарок пользователей
 
-        // РАБОЧИЙ TURN ВМЕСТЕ СО STUN ДЛЯ ОБХОДА ВСЕХ ЛОКАЛЬНЫХ СЕТЕЙ И БРАУЗЕРОВ
         const iceServers = { 
             iceServers: [
                 { urls: 'stun:stun.l.google.com:19302' },
@@ -467,10 +486,28 @@ HTML_TEMPLATE = """
             ] 
         };
 
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') {
+                if (!socket.connected) socket.connect();
+            }
+        });
+
         function getAvatarColor(name) {
             let hash = 0;
             for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
             return '#' + ("00000" + (hash & 0x00FFFFFF).toString(16).toUpperCase()).slice(-6);
+        }
+
+        function setAvatarElement(elem, username) {
+            const avatarUrl = userAvatarsMap[username];
+            if (avatarUrl) {
+                elem.style.backgroundImage = `url('${avatarUrl}')`;
+                elem.innerText = '';
+            } else {
+                elem.style.backgroundImage = 'none';
+                elem.style.backgroundColor = getAvatarColor(username);
+                elem.innerText = username.charAt(0).toUpperCase();
+            }
         }
 
         window.addEventListener('DOMContentLoaded', () => {
@@ -502,15 +539,37 @@ HTML_TEMPLATE = """
                 document.getElementById('app-screen').style.display = 'flex';
                 document.getElementById('user-display').innerText = currentUser;
 
-                const myAv = document.getElementById('my-avatar');
-                myAv.innerText = currentUser.charAt(0).toUpperCase();
-                myAv.style.background = getAvatarColor(currentUser);
+                if (data.avatar) userAvatarsMap[currentUser] = data.avatar;
+                setAvatarElement(document.getElementById('my-avatar'), currentUser);
+                setAvatarElement(document.getElementById('profile-big-avatar'), currentUser);
 
                 socket.emit('get_channels');
                 socket.emit('get_users');
+                switchChat('#general');
             } else {
                 document.getElementById('status').innerText = data.message;
             }
+        });
+
+        function uploadAvatar() {
+            const file = document.getElementById('avatar-input').files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const b64 = e.target.result;
+                socket.emit('update_avatar', { user: currentUser, avatar: b64 });
+            };
+            reader.readAsDataURL(file);
+        }
+
+        socket.on('avatar_updated', (data) => {
+            userAvatarsMap[data.user] = data.avatar;
+            if (data.user === currentUser) {
+                setAvatarElement(document.getElementById('my-avatar'), currentUser);
+                setAvatarElement(document.getElementById('profile-big-avatar'), currentUser);
+            }
+            socket.emit('get_users');
+            if (activeRoomId) socket.emit('mafia_get_room_state', { room_id: activeRoomId });
         });
 
         function toggleSidebar() {
@@ -524,6 +583,20 @@ HTML_TEMPLATE = """
             document.getElementById('sidebar-overlay').classList.remove('active');
         }
 
+        function switchChat(target) {
+            currentTarget = target;
+            document.getElementById('chat-title').innerText = target.startsWith('#') ? target : '@' + target;
+            document.getElementById('messages').innerHTML = '';
+            closeSidebar();
+            socket.emit('load_history', { user: currentUser, target: currentTarget });
+        }
+
+        socket.on('history_loaded', (data) => {
+            document.getElementById('messages').innerHTML = '';
+            allLoadedMessages = {};
+            data.messages.forEach(msg => appendMessage(msg));
+        });
+
         socket.on('channels_list', (data) => {
             const list = document.getElementById('channels-list');
             list.innerHTML = '';
@@ -531,14 +604,7 @@ HTML_TEMPLATE = """
                 const div = document.createElement('div');
                 div.className = 'chat-item' + (ch === currentTarget ? ' active' : '');
                 div.innerText = ch;
-                div.onclick = () => {
-                    currentTarget = ch;
-                    document.getElementById('chat-title').innerText = ch;
-                    document.querySelectorAll('.chat-item').forEach(i => i.classList.remove('active'));
-                    div.classList.add('active');
-                    document.getElementById('messages').innerHTML = '';
-                    closeSidebar();
-                };
+                div.onclick = () => switchChat(ch);
                 list.appendChild(div);
             });
         });
@@ -547,22 +613,22 @@ HTML_TEMPLATE = """
             const list = document.getElementById('users-list');
             list.innerHTML = '';
             data.users.forEach(u => {
+                if (u.avatar) userAvatarsMap[u.username] = u.avatar;
                 if (u.username === currentUser) return;
+
                 const div = document.createElement('div');
                 div.className = 'chat-item' + (u.username === currentTarget ? ' active' : '');
-                div.innerHTML = `
-                    <div class="avatar" style="background:${getAvatarColor(u.username)}">${u.username.charAt(0).toUpperCase()}</div>
+                
+                const avDiv = document.createElement('div');
+                avDiv.className = 'avatar';
+                setAvatarElement(avDiv, u.username);
+
+                div.appendChild(avDiv);
+                div.innerHTML += `
                     <span>${u.username}</span>
                     <span class="status-dot ${u.online ? 'online' : 'offline'}"></span>
                 `;
-                div.onclick = () => {
-                    currentTarget = u.username;
-                    document.getElementById('chat-title').innerText = '@' + u.username;
-                    document.querySelectorAll('.chat-item').forEach(i => i.classList.remove('active'));
-                    div.classList.add('active');
-                    document.getElementById('messages').innerHTML = '';
-                    closeSidebar();
-                };
+                div.onclick = () => switchChat(u.username);
                 list.appendChild(div);
             });
         });
@@ -647,7 +713,11 @@ HTML_TEMPLATE = """
             }
         }
 
-        socket.on('new_msg', (data) => { appendMessage(data); });
+        socket.on('new_msg', (data) => { 
+            if (data.target === currentTarget || data.sender === currentTarget || (data.target.startsWith('#') && data.target === currentTarget)) {
+                appendMessage(data); 
+            }
+        });
 
         function appendMessage(msg) {
             allLoadedMessages[msg.id] = msg;
@@ -685,6 +755,9 @@ HTML_TEMPLATE = """
 
             let deleteBtn = isMe ? `<button class="action-btn" onclick="deleteMessage(${msg.id})">🗑️</button>` : '';
 
+            const avatarUrl = userAvatarsMap[msg.sender];
+            let msgAvStyle = avatarUrl ? `background-image:url('${avatarUrl}')` : `background-color:${getAvatarColor(msg.sender)}`;
+
             div.innerHTML = `
                 <div class="msg-actions">
                     <button class="action-btn" onclick="setReplyMsg(${msg.id})">↩️</button>
@@ -694,7 +767,10 @@ HTML_TEMPLATE = """
                     ${deleteBtn}
                 </div>
                 ${replyHtml}
-                <div class="msg-sender">${isMe ? 'Вы' : msg.sender}</div>
+                <div class="msg-header">
+                    <span class="msg-avatar" style="${msgAvStyle}"></span>
+                    <span>${isMe ? 'Вы' : msg.sender}</span>
+                </div>
                 ${contentHtml}
                 <div class="reactions-list">${reactionsHtml}</div>
             `;
@@ -745,7 +821,7 @@ HTML_TEMPLATE = """
             });
         }
 
-        /* --- WEBRTC С УНИКАЛЬНЫМИ СЕССИЯМИ В КЛАДКАХ --- */
+        /* --- WEBRTC И МАФИЯ С АВАТАРКАМИ --- */
         function openMafiaModal() {
             closeProfileModal();
             document.getElementById('mafia-modal').style.display = 'flex';
@@ -955,8 +1031,12 @@ HTML_TEMPLATE = """
                         if (data.state === 'day') actBtn = `<button class="act-btn" style="background:#f57c00;" onclick="socket.emit('mafia_action', {room_id:'${activeRoomId}', user:'${currentUser}', target:'${p.name}', action:'vote'})">Голос</button>`;
                     }
 
-                    slotDiv.innerHTML = `
-                        <div class="slot-avatar" style="background:${getAvatarColor(p.name)}">${p.name.charAt(0).toUpperCase()}</div>
+                    const avElem = document.createElement('div');
+                    avElem.className = 'slot-avatar';
+                    setAvatarElement(avElem, p.name);
+
+                    slotDiv.appendChild(avElem);
+                    slotDiv.innerHTML += `
                         <div class="slot-name">${p.name}</div>
                         <div class="audio-meter-box" id="meter-box-${p.name}"><div class="audio-meter-bar" id="meter-bar-${p.name}"></div></div>
                         <div class="slot-status">${p.alive ? '🟢 Жив' : '💀 Убит'}</div>
@@ -996,17 +1076,17 @@ def on_login(data):
     password = data.get('password', '').strip()
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT password_hash, salt, role FROM users WHERE username = ?", (username,))
+    cur.execute("SELECT password_hash, salt, role, avatar FROM users WHERE username = ?", (username,))
     row = cur.fetchone()
 
     if row:
-        pwd_hash, salt, role = row
+        pwd_hash, salt, role, avatar = row
         conn.close()
         check_hash, _ = hash_password(password, salt)
         if check_hash == pwd_hash:
             join_room(username)
             join_room('#general')
-            emit('auth_response', {'status': 'ok', 'username': username, 'role': role})
+            emit('auth_response', {'status': 'ok', 'username': username, 'role': role, 'avatar': avatar})
         else: emit('auth_response', {'status': 'error', 'message': 'Неверный пароль'})
     else:
         conn.close()
@@ -1026,6 +1106,17 @@ def on_register(data):
         emit('auth_response', {'status': 'error', 'message': 'Успешно! Теперь войдите.'})
     except sqlite3.IntegrityError: emit('auth_response', {'status': 'error', 'message': 'Логин занят'})
     finally: conn.close()
+
+@socketio.on('update_avatar')
+def on_update_avatar(data):
+    user = data['user']
+    avatar = data['avatar']
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("UPDATE users SET avatar = ? WHERE username = ?", (avatar, user))
+    conn.commit()
+    conn.close()
+    emit('avatar_updated', {'user': user, 'avatar': avatar}, broadcast=True)
 
 @socketio.on('change_password')
 def on_change_password(data):
@@ -1057,10 +1148,41 @@ def on_get_channels(): emit('channels_list', {'channels': ['#general']})
 def on_get_users():
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT username, role, last_seen FROM users")
-    users = [{'username': r[0], 'online': True, 'last_seen': r[2]} for r in cur.fetchall()]
+    cur.execute("SELECT username, role, last_seen, avatar FROM users")
+    users = [{'username': r[0], 'online': True, 'last_seen': r[2], 'avatar': r[3]} for r in cur.fetchall()]
     conn.close()
     emit('users_list', {'users': users}, broadcast=True)
+
+@socketio.on('load_history')
+def on_load_history(data):
+    user = data['user']
+    target = data['target']
+    conn = get_db()
+    cur = conn.cursor()
+    
+    if target.startswith('#'):
+        cur.execute("""
+            SELECT id, sender, target, message, msg_type, reply_to, reply_text, reactions 
+            FROM messages WHERE target = ? ORDER BY id ASC LIMIT 200
+        """, (target,))
+    else:
+        cur.execute("""
+            SELECT id, sender, target, message, msg_type, reply_to, reply_text, reactions 
+            FROM messages 
+            WHERE (sender = ? AND target = ?) OR (sender = ? AND target = ?) 
+            ORDER BY id ASC LIMIT 200
+        """, (user, target, target, user))
+        
+    rows = cur.fetchall()
+    conn.close()
+    
+    msgs = []
+    for r in rows:
+        msgs.append({
+            'id': r[0], 'sender': r[1], 'target': r[2], 'msg': r[3],
+            'msg_type': r[4], 'reply_to': r[5], 'reply_text': r[6], 'reactions': r[7]
+        })
+    emit('history_loaded', {'messages': msgs})
 
 @socketio.on('send_msg')
 def on_send_msg(data):
@@ -1111,7 +1233,6 @@ def on_delete_msg(data):
     conn.close()
     emit('msg_deleted', {'msg_id': msg_id}, broadcast=True)
 
-# АДРЕСНЫЙ WEBRTC СИГНАЛИНГ С SOCKET.ID В ВЕРСИИ ДЛЯ МНОГОПОТОЧНОСТИ
 @socketio.on('webrtc_join')
 def on_webrtc_join(data):
     room_id = data.get('room_id')
