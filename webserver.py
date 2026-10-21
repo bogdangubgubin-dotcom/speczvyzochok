@@ -34,20 +34,21 @@ def init_db():
         )
     """)
     
-    try:
-        cur.execute("ALTER TABLE users ADD COLUMN avatar TEXT DEFAULT ''")
-    except sqlite3.OperationalError:
-        pass
+    try: cur.execute("ALTER TABLE users ADD COLUMN avatar TEXT DEFAULT ''")
+    except sqlite3.OperationalError: pass
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS channels (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT UNIQUE NOT NULL,
             creator TEXT NOT NULL,
-            members TEXT DEFAULT ''
+            members TEXT DEFAULT '',
+            pinned_msg TEXT DEFAULT ''
         )
     """)
     cur.execute("INSERT OR IGNORE INTO channels (name, creator, members) VALUES ('#general', 'system', '')")
+    try: cur.execute("ALTER TABLE channels ADD COLUMN pinned_msg TEXT DEFAULT ''")
+    except sqlite3.OperationalError: pass
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS messages (
@@ -60,14 +61,18 @@ def init_db():
             reply_text TEXT DEFAULT '',
             reactions TEXT DEFAULT '{}',
             ttl INTEGER DEFAULT 0,
+            is_read INTEGER DEFAULT 0,
+            is_edited INTEGER DEFAULT 0,
             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     """)
     
-    try:
-        cur.execute("ALTER TABLE messages ADD COLUMN ttl INTEGER DEFAULT 0")
-    except sqlite3.OperationalError:
-        pass
+    try: cur.execute("ALTER TABLE messages ADD COLUMN ttl INTEGER DEFAULT 0")
+    except sqlite3.OperationalError: pass
+    try: cur.execute("ALTER TABLE messages ADD COLUMN is_read INTEGER DEFAULT 0")
+    except sqlite3.OperationalError: pass
+    try: cur.execute("ALTER TABLE messages ADD COLUMN is_edited INTEGER DEFAULT 0")
+    except sqlite3.OperationalError: pass
 
     cur.execute("SELECT username FROM users WHERE username = 'totr'")
     if cur.fetchone():
@@ -120,12 +125,9 @@ class MafiaRoom:
 
     def start_game(self):
         plist = list(self.players.keys())
-        if len(plist) < 3:
-            return False, "Нужно минимум 3 игрока!"
-
+        if len(plist) < 3: return False, "Нужно минимум 3 игрока!"
         random.shuffle(plist)
         mafia_count = max(1, len(plist) // 3)
-        
         roles = ['mafia'] * mafia_count
         if len(plist) >= 4: roles.append('doc')
         if len(plist) >= 5: roles.append('cop')
@@ -147,7 +149,6 @@ class MafiaRoom:
     def check_win(self):
         alive_mafia = sum(1 for p in self.players.values() if p['alive'] and p['role'] == 'mafia')
         alive_others = sum(1 for p in self.players.values() if p['alive'] and p['role'] != 'mafia')
-
         if alive_mafia == 0:
             self.state = 'ended'
             self.timer_end = 0
@@ -162,47 +163,38 @@ class MafiaRoom:
         mafia_targets = list(self.night_actions['mafia'].values())
         killed = max(set(mafia_targets), key=mafia_targets.count) if mafia_targets else None
         saved = self.night_actions['doc']
-        
         msg = "Утро. "
         if killed and killed != saved:
             self.players[killed]['alive'] = False
             self.players[killed]['mic'] = False
             msg += f"Ночью был убит игрок **{killed}**."
-        else:
-            msg += "Ночью никто не погиб!"
-
+        else: msg += "Ночью никто не погиб!"
         self.logs.append(msg)
         win = self.check_win()
-        if win:
-            self.logs.append(f"🎉 **{win}**")
+        if win: self.logs.append(f"🎉 **{win}**")
         else:
             self.state = 'day'
             self.timer_end = int(time.time()) + 60
             for u, p in self.players.items():
                 if p['alive']: p['mic'] = True
-
         self.night_actions = {'mafia': {}, 'doc': None, 'cop': None}
         return msg
 
     def process_day(self):
-        if not self.day_votes:
-            self.logs.append("Днем никто не был исключен.")
+        if not self.day_votes: self.logs.append("Днем никто не был исключен.")
         else:
             targets = list(self.day_votes.values())
             exiled = max(set(targets), key=targets.count)
             self.players[exiled]['alive'] = False
             self.players[exiled]['mic'] = False
             self.logs.append(f"Город выгнал игрока **{exiled}** ({self.players[exiled]['role']}).")
-
         win = self.check_win()
-        if win:
-            self.logs.append(f"🎉 **{win}**")
+        if win: self.logs.append(f"🎉 **{win}**")
         else:
             self.state = 'night'
             self.timer_end = int(time.time()) + 60
             self.logs.append("Наступает ночь... Город засыпает (60 сек).")
             for u, p in self.players.items(): p['mic'] = False
-
         self.day_votes = {}
 
 mafia_rooms = {f"room_{i}": MafiaRoom(f"room_{i}", f"Комната №{i}") for i in range(1, 6)}
@@ -214,7 +206,6 @@ HTML_TEMPLATE = """
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Спецзвязочок</title>
-
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
     <style>
         :root {
@@ -266,6 +257,8 @@ HTML_TEMPLATE = """
         .header-left { display: flex; align-items: center; gap: 10px; }
         .toggle-btn { width: 36px; height: 36px; background: var(--item-hover); border: 1px solid var(--panel-border); font-size: 18px; border-radius: 8px; color: var(--text-color); cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
 
+        #pinned-bar { display: none; background: var(--item-hover); padding: 6px 15px; border-bottom: 1px solid var(--panel-border); font-size: 13px; color: #3B8ED0; display: flex; justify-content: space-between; align-items: center; }
+
         .search-bar { padding: 6px 12px; background: var(--panel-bg); border-bottom: 1px solid var(--panel-border); display: flex; gap: 8px; }
         .search-bar input { margin: 0; padding: 6px 10px; font-size: 13px; height: 32px; border-radius: 6px; width: 100%; }
 
@@ -278,9 +271,13 @@ HTML_TEMPLATE = """
         .msg-me .msg-header { justify-content: flex-end; color: #e0e0e0; }
         .msg-avatar { width: 18px; height: 18px; border-radius: 50%; background-size: cover; background-position: center; display: inline-block; cursor: pointer; }
 
-        .msg-actions { display: none; position: absolute; top: -26px; right: 0; background: var(--panel-bg); border-radius: 12px; padding: 3px 8px; gap: 8px; border: 1px solid var(--panel-border); z-index: 50; box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
+        .msg-status { font-size: 10px; align-self: flex-end; margin-top: 2px; opacity: 0.8; }
+        .msg-me .msg-status { color: #bbdefb; }
+        .msg-other .msg-status { color: #888; }
+
+        .msg-actions { display: none; position: absolute; top: -26px; right: 0; background: var(--panel-bg); border-radius: 12px; padding: 3px 8px; gap: 6px; border: 1px solid var(--panel-border); z-index: 50; box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
         .message:hover .msg-actions, .message:focus .msg-actions, .message.active-touch .msg-actions { display: flex; }
-        .action-btn { cursor: pointer; font-size: 14px; padding: 2px 4px; color: var(--text-color); border: none; background: transparent; }
+        .action-btn { cursor: pointer; font-size: 13px; padding: 2px 4px; color: var(--text-color); border: none; background: transparent; }
         .action-btn:hover { transform: scale(1.2); }
 
         .reactions-list { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 4px; }
@@ -321,7 +318,6 @@ HTML_TEMPLATE = """
         .avatar-upload-box { display: flex; flex-direction: column; align-items: center; gap: 10px; margin-bottom: 10px; }
         .big-avatar { width: 70px; height: 70px; border-radius: 50%; background: #3B8ED0; display: flex; align-items: center; justify-content: center; font-size: 28px; font-weight: bold; color: #fff; background-size: cover; background-position: center; border: 2px solid #555; }
 
-        /* ЭМОДЗИ ПИКЕР И LIGHTBOX */
         #emoji-picker { display: none; position: absolute; bottom: 65px; right: 10px; background: var(--panel-bg); border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px; grid-template-columns: repeat(5, 1fr); gap: 8px; z-index: 100; font-size: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
         #emoji-picker span { cursor: pointer; text-align: center; }
         #emoji-picker span:hover { transform: scale(1.3); }
@@ -386,6 +382,11 @@ HTML_TEMPLATE = """
                 </div>
             </header>
 
+            <div id="pinned-bar">
+                <span>📌 <b id="pinned-msg-text">...</b></span>
+                <button onclick="unpinMsg()" style="width:auto; padding:0 6px; background:transparent; border:none; color:#aaa; cursor:pointer;">✕</button>
+            </div>
+
             <div class="search-bar">
                 <input type="text" id="search-input" placeholder="🔍 Поиск по сообщениям..." oninput="searchMessages()">
             </div>
@@ -398,15 +399,9 @@ HTML_TEMPLATE = """
             </div>
 
             <div id="emoji-picker">
-                <span onclick="addEmoji('👍')">👍</span>
-                <span onclick="addEmoji('❤️')">❤️</span>
-                <span onclick="addEmoji('🔥')">🔥</span>
-                <span onclick="addEmoji('😂')">😂</span>
-                <span onclick="addEmoji('😮')">😮</span>
-                <span onclick="addEmoji('🎉')">🎉</span>
-                <span onclick="addEmoji('💩')">💩</span>
-                <span onclick="addEmoji('👀')">👀</span>
-                <span onclick="addEmoji('💯')">💯</span>
+                <span onclick="addEmoji('👍')">👍</span><span onclick="addEmoji('❤️')">❤️</span><span onclick="addEmoji('🔥')">🔥</span>
+                <span onclick="addEmoji('😂')">😂</span><span onclick="addEmoji('😮')">😮</span><span onclick="addEmoji('🎉')">🎉</span>
+                <span onclick="addEmoji('💩')">💩</span><span onclick="addEmoji('👀')">👀</span><span onclick="addEmoji('💯')">💯</span>
                 <span onclick="addEmoji('🤝')">🤝</span>
             </div>
 
@@ -423,8 +418,24 @@ HTML_TEMPLATE = """
                     <option value="60">1m</option>
                 </select>
                 <input type="text" id="msg-input" placeholder="Сообщение..." oninput="notifyTyping()" onkeypress="if(event.key==='Enter') sendMsg()">
-                <button onclick="sendMsg()">></button>
+                <button id="send-btn" onclick="sendMsg()">></button>
             </footer>
+        </div>
+    </div>
+
+    <!-- МОДАЛЬНОЕ ОКНО СМОТРА ПРОФИЛЯ ПОЛЬЗОВАТЕЛЯ -->
+    <div id="user-info-modal" class="modal-overlay">
+        <div class="modal-box">
+            <div class="modal-header">
+                <h3>Карточка пользователя</h3>
+                <button onclick="closeUserInfoModal()" style="width:auto; padding:4px 10px; background:#444;">✕</button>
+            </div>
+            <div class="modal-body" style="text-align:center;">
+                <div id="info-user-avatar" class="big-avatar" style="margin: 0 auto 10px auto;">?</div>
+                <h3 id="info-user-name">...</h3>
+                <p id="info-user-role" style="font-size:12px; color:#3B8ED0; margin-bottom:10px;">User</p>
+                <button id="info-pm-btn" style="background:#1F6AA5;">💬 Написать в личку</button>
+            </div>
         </div>
     </div>
 
@@ -510,11 +521,7 @@ HTML_TEMPLATE = """
         </div>
     </div>
 
-    <!-- LIGHTBOX (ПРОСМОТР КАРТИНКИ) -->
-    <div id="lightbox" onclick="this.style.display='none'">
-        <img id="lightbox-img" src="">
-    </div>
-
+    <div id="lightbox" onclick="this.style.display='none'"><img id="lightbox-img" src=""></div>
     <div id="audio-peers-container" style="display:none;"></div>
 
     <script>
@@ -524,6 +531,7 @@ HTML_TEMPLATE = """
         let activeRoomId = null;
         let showRoleFlag = false;
         let mySecretRole = null;
+        let editingMsgId = null;
         
         let isMicOn = false;
         let mediaStream = null;
@@ -549,24 +557,18 @@ HTML_TEMPLATE = """
             ] 
         };
 
-        // ЗАПРОС РАЗРЕШЕНИЯ НА PUSH УВЕДОМЛЕНИЯ
-        if ("Notification" in window && Notification.permission === "default") {
-            Notification.requestPermission();
-        }
+        if ("Notification" in window && Notification.permission === "default") Notification.requestPermission();
 
-        // ВОСПРОИЗВЕДЕНИЕ СИНТЕТИЧЕСКОГО ЗВУКА ВХОДЯЩЕГО СООБЩЕНИЯ
         function playNotificationSound() {
             try {
                 const ctx = new (window.AudioContext || window.webkitAudioContext)();
                 const osc = ctx.createOscillator();
                 const gain = ctx.createGain();
-                osc.connect(gain);
-                gain.connect(ctx.destination);
-                osc.frequency.value = 587.33; // D5 note
+                osc.connect(gain); gain.connect(ctx.destination);
+                osc.frequency.value = 587.33;
                 gain.gain.setValueAtTime(0.1, ctx.currentTime);
                 gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
-                osc.start();
-                osc.stop(ctx.currentTime + 0.3);
+                osc.start(); osc.stop(ctx.currentTime + 0.3);
             } catch(e){}
         }
 
@@ -576,13 +578,9 @@ HTML_TEMPLATE = """
 
         function toggleTheme() {
             document.body.classList.toggle('light-theme');
-            const isLight = document.body.classList.contains('light-theme');
-            localStorage.setItem('pychat_theme', isLight ? 'light' : 'dark');
+            localStorage.setItem('pychat_theme', document.body.classList.contains('light-theme') ? 'light' : 'dark');
         }
-
-        if (localStorage.getItem('pychat_theme') === 'light') {
-            document.body.classList.add('light-theme');
-        }
+        if (localStorage.getItem('pychat_theme') === 'light') document.body.classList.add('light-theme');
 
         function openLightbox(bgStyleUrl) {
             let url = bgStyleUrl.replace('url("', '').replace('")', '').replace("url('", '').replace("')", '');
@@ -660,7 +658,6 @@ HTML_TEMPLATE = """
         function uploadAvatar() {
             const file = document.getElementById('avatar-input').files[0];
             if (!file) return;
-
             const img = new Image();
             const reader = new FileReader();
             reader.onload = function(e) {
@@ -668,8 +665,7 @@ HTML_TEMPLATE = """
                 img.onload = function() {
                     const canvas = document.createElement('canvas');
                     const ctx = canvas.getContext('2d');
-                    canvas.width = 200;
-                    canvas.height = 200;
+                    canvas.width = 200; canvas.height = 200;
                     ctx.drawImage(img, 0, 0, 200, 200);
                     const compressedB64 = canvas.toDataURL('image/jpeg', 0.8);
                     socket.emit('update_avatar', { user: currentUser, avatar: compressedB64 });
@@ -688,10 +684,8 @@ HTML_TEMPLATE = """
         });
 
         function toggleSidebar() {
-            const sb = document.getElementById('sidebar');
-            const ov = document.getElementById('sidebar-overlay');
-            sb.classList.toggle('open');
-            ov.classList.toggle('active');
+            document.getElementById('sidebar').classList.toggle('open');
+            document.getElementById('sidebar-overlay').classList.toggle('active');
         }
         function closeSidebar() {
             document.getElementById('sidebar').classList.remove('open');
@@ -710,6 +704,28 @@ HTML_TEMPLATE = """
             document.getElementById('messages').innerHTML = '';
             allLoadedMessages = {};
             data.messages.forEach(msg => appendMessage(msg));
+            if (data.pinned_msg) showPinnedMsg(data.pinned_msg);
+            else document.getElementById('pinned-bar').style.display = 'none';
+            socket.emit('mark_read', { user: currentUser, target: currentTarget });
+        });
+
+        function showPinnedMsg(txt) {
+            document.getElementById('pinned-msg-text').innerText = txt;
+            document.getElementById('pinned-bar').style.display = 'flex';
+        }
+
+        function pinMsg(id) {
+            const msg = allLoadedMessages[id];
+            if (msg) socket.emit('pin_msg', { target: currentTarget, msg: msg.sender + ': ' + msg.msg });
+        }
+
+        function unpinMsg() { socket.emit('pin_msg', { target: currentTarget, msg: '' }); }
+
+        socket.on('update_pinned', (data) => {
+            if (data.target === currentTarget) {
+                if (data.msg) showPinnedMsg(data.msg);
+                else document.getElementById('pinned-bar').style.display = 'none';
+            }
         });
 
         socket.on('channels_list', (data) => {
@@ -733,7 +749,6 @@ HTML_TEMPLATE = """
 
                 const div = document.createElement('div');
                 div.className = 'chat-item' + (u.username === currentTarget ? ' active' : '');
-                
                 const avDiv = document.createElement('div');
                 avDiv.className = 'avatar';
                 setAvatarElement(avDiv, u.username);
@@ -747,6 +762,17 @@ HTML_TEMPLATE = """
                 list.appendChild(div);
             });
         });
+
+        function openUserInfoModal(uname) {
+            document.getElementById('info-user-name').innerText = uname;
+            setAvatarElement(document.getElementById('info-user-avatar'), uname);
+            document.getElementById('info-pm-btn').onclick = () => {
+                closeUserInfoModal();
+                switchChat(uname);
+            };
+            document.getElementById('user-info-modal').style.display = 'flex';
+        }
+        function closeUserInfoModal() { document.getElementById('user-info-modal').style.display = 'none'; }
 
         function changePassword() {
             const oldP = document.getElementById('old-pass').value.trim();
@@ -766,9 +792,7 @@ HTML_TEMPLATE = """
             }
         });
 
-        function notifyTyping() {
-            socket.emit('user_typing', { sender: currentUser, target: currentTarget });
-        }
+        function notifyTyping() { socket.emit('user_typing', { sender: currentUser, target: currentTarget }); }
 
         socket.on('display_typing', (data) => {
             if (data.target === currentTarget || data.sender === currentTarget) {
@@ -793,14 +817,38 @@ HTML_TEMPLATE = """
             const txt = document.getElementById('msg-input').value.trim();
             const ttl = parseInt(document.getElementById('ttl-select').value) || 0;
             if (!txt) return;
-            socket.emit('send_msg', {
-                sender: currentUser, target: currentTarget, msg: txt, msg_type: 'text', ttl: ttl,
-                reply_to: activeReplyMsg ? activeReplyMsg.id : null,
-                reply_text: activeReplyMsg ? activeReplyMsg.sender + ': ' + activeReplyMsg.msg : ''
-            });
+
+            if (editingMsgId) {
+                socket.emit('edit_msg', { msg_id: editingMsgId, new_text: txt, user: currentUser });
+                editingMsgId = null;
+                document.getElementById('send-btn').innerText = '>';
+            } else {
+                socket.emit('send_msg', {
+                    sender: currentUser, target: currentTarget, msg: txt, msg_type: 'text', ttl: ttl,
+                    reply_to: activeReplyMsg ? activeReplyMsg.id : null,
+                    reply_text: activeReplyMsg ? activeReplyMsg.sender + ': ' + activeReplyMsg.msg : ''
+                });
+            }
             document.getElementById('msg-input').value = '';
             cancelReply();
         }
+
+        function startEditMsg(id) {
+            const msg = allLoadedMessages[id];
+            if (msg) {
+                editingMsgId = id;
+                document.getElementById('msg-input').value = msg.msg;
+                document.getElementById('send-btn').innerText = '✓';
+            }
+        }
+
+        socket.on('msg_edited', (data) => {
+            if (allLoadedMessages[data.msg_id]) {
+                allLoadedMessages[data.msg_id].msg = data.new_text;
+                allLoadedMessages[data.msg_id].is_edited = 1;
+                appendMessage(allLoadedMessages[data.msg_id]);
+            }
+        });
 
         function cancelReply() {
             activeReplyMsg = null;
@@ -861,6 +909,13 @@ HTML_TEMPLATE = """
             }
             if (data.target === currentTarget || data.sender === currentTarget || (data.target.startsWith('#') && data.target === currentTarget)) {
                 appendMessage(data); 
+                socket.emit('mark_read', { user: currentUser, target: currentTarget });
+            }
+        });
+
+        socket.on('messages_read', (data) => {
+            if (data.target === currentUser || data.user === currentTarget) {
+                document.querySelectorAll('.msg-status').forEach(st => st.innerText = '✓✓');
             }
         });
 
@@ -890,17 +945,18 @@ HTML_TEMPLATE = """
             }
 
             let ttlBadge = msg.ttl > 0 ? `<span style="font-size:10px; color:#ff9800;"> 💣 (${msg.ttl}s)</span>` : '';
+            let editBadge = msg.is_edited ? `<span style="font-size:10px; opacity:0.7;"> (изм.)</span>` : '';
+            let readMark = isMe ? (msg.is_read ? '✓✓' : '✓') : '';
 
             let reactionsObj = {};
             try { reactionsObj = JSON.parse(msg.reactions || '{}'); } catch(e){}
             let reactionsHtml = '';
             for (const [emoji, users] of Object.entries(reactionsObj)) {
-                if (users.length > 0) {
-                    reactionsHtml += `<span class="reaction-item" onclick="addReaction(${msg.id}, '${emoji}')">${emoji} ${users.length}</span>`;
-                }
+                if (users.length > 0) reactionsHtml += `<span class="reaction-item" onclick="addReaction(${msg.id}, '${emoji}')">${emoji} ${users.length}</span>`;
             }
 
             let deleteBtn = isMe ? `<button class="action-btn" onclick="deleteMessage(${msg.id})">🗑️</button>` : '';
+            let editBtn = isMe && msg.msg_type === 'text' ? `<button class="action-btn" onclick="startEditMsg(${msg.id})">✏️</button>` : '';
 
             const avatarUrl = userAvatarsMap[msg.sender];
             let msgAvStyle = (avatarUrl && avatarUrl.length > 10) ? `background-image:url('${avatarUrl}')` : `background-color:${getAvatarColor(msg.sender)}`;
@@ -908,17 +964,19 @@ HTML_TEMPLATE = """
             div.innerHTML = `
                 <div class="msg-actions">
                     <button class="action-btn" onclick="setReplyMsg(${msg.id})">↩️</button>
+                    <button class="action-btn" onclick="pinMsg(${msg.id})">📌</button>
                     <button class="action-btn" onclick="addReaction(${msg.id}, '👍')">👍</button>
                     <button class="action-btn" onclick="addReaction(${msg.id}, '❤️')">❤️</button>
-                    <button class="action-btn" onclick="addReaction(${msg.id}, '🔥')">🔥</button>
+                    ${editBtn}
                     ${deleteBtn}
                 </div>
                 ${replyHtml}
                 <div class="msg-header">
-                    <span class="msg-avatar" style="${msgAvStyle}" onclick="openLightbox('${avatarUrl}')"></span>
-                    <span>${isMe ? 'Вы' : msg.sender}${ttlBadge}</span>
+                    <span class="msg-avatar" style="${msgAvStyle}" onclick="openUserInfoModal('${msg.sender}')"></span>
+                    <span onclick="openUserInfoModal('${msg.sender}')" style="cursor:pointer;">${isMe ? 'Вы' : msg.sender}${ttlBadge}</span>
                 </div>
-                ${contentHtml}
+                ${contentHtml}${editBadge}
+                <div class="msg-status">${readMark}</div>
                 <div class="reactions-list">${reactionsHtml}</div>
             `;
 
@@ -929,12 +987,7 @@ HTML_TEMPLATE = """
             });
 
             box.scrollTop = box.scrollHeight;
-
-            if (msg.ttl > 0) {
-                setTimeout(() => {
-                    deleteMessage(msg.id);
-                }, msg.ttl * 1000);
-            }
+            if (msg.ttl > 0) setTimeout(() => { deleteMessage(msg.id); }, msg.ttl * 1000);
         }
 
         function setReplyMsg(id) {
@@ -946,9 +999,7 @@ HTML_TEMPLATE = """
             }
         }
 
-        function addReaction(id, emoji) {
-            socket.emit('add_reaction', { msg_id: id, emoji: emoji, user: currentUser });
-        }
+        function addReaction(id, emoji) { socket.emit('add_reaction', { msg_id: id, emoji: emoji, user: currentUser }); }
 
         socket.on('update_msg_reactions', (data) => {
             if (allLoadedMessages[data.msg_id]) {
@@ -957,9 +1008,7 @@ HTML_TEMPLATE = """
             }
         });
 
-        function deleteMessage(id) {
-            socket.emit('delete_msg', { msg_id: id, user: currentUser });
-        }
+        function deleteMessage(id) { socket.emit('delete_msg', { msg_id: id, user: currentUser }); }
 
         socket.on('msg_deleted', (data) => {
             const elem = document.getElementById('msg-elem-' + data.msg_id);
@@ -999,10 +1048,7 @@ HTML_TEMPLATE = """
         }
 
         function joinActiveRoom() { socket.emit('mafia_join', { room_id: activeRoomId, user: currentUser }); }
-        function leaveActiveRoom() { 
-            stopMicMeter();
-            socket.emit('mafia_leave', { room_id: activeRoomId, user: currentUser }); 
-        }
+        function leaveActiveRoom() { stopMicMeter(); socket.emit('mafia_leave', { room_id: activeRoomId, user: currentUser }); }
         function startActiveRoomGame() { socket.emit('mafia_start', { room_id: activeRoomId }); }
 
         function toggleRoleShow() {
@@ -1016,32 +1062,21 @@ HTML_TEMPLATE = """
             if (isMicOn) {
                 try {
                     mediaStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
-                    btn.innerText = '🎙️ Микрофон ВКЛ';
-                    btn.style.background = '#388e3c';
+                    btn.innerText = '🎙️ Микрофон ВКЛ'; btn.style.background = '#388e3c';
                     startMicMeter(mediaStream);
                     socket.emit('webrtc_join', { room_id: activeRoomId, user: currentUser });
-                } catch(err) {
-                    alert('Ошибка доступа к микрофону: ' + err);
-                    isMicOn = false;
-                }
-            } else {
-                stopMicMeter();
-                btn.innerText = '🔇 Микрофон ВЫКЛ';
-                btn.style.background = '#c62828';
-            }
+                } catch(err) { alert('Микрофон недоступен: ' + err); isMicOn = false; }
+            } else { stopMicMeter(); btn.innerText = '🔇 Микрофон ВЫКЛ'; btn.style.background = '#c62828'; }
         }
 
         function startMicMeter(stream) {
             audioContext = new (window.AudioContext || window.webkitAudioContext)();
             if (audioContext.state === 'suspended') audioContext.resume();
-            
             analyser = audioContext.createAnalyser();
             const source = audioContext.createMediaStreamSource(stream);
             source.connect(analyser);
-
             analyser.fftSize = 64;
             const dataArray = new Uint8Array(analyser.frequencyBinCount);
-
             const myMeterBox = document.getElementById('meter-box-' + currentUser);
             const myMeterBar = document.getElementById('meter-bar-' + currentUser);
             if (myMeterBox) myMeterBox.style.display = 'block';
@@ -1052,7 +1087,6 @@ HTML_TEMPLATE = """
                 for (let i = 0; i < dataArray.length; i++) sum += dataArray[i];
                 let average = sum / dataArray.length;
                 let pct = Math.min(100, Math.round((average / 128) * 100));
-                
                 if (myMeterBar) myMeterBar.style.width = pct + '%';
                 micAnimFrame = requestAnimationFrame(updateLevel);
             }
@@ -1063,30 +1097,22 @@ HTML_TEMPLATE = """
             if (peerConnections[targetSid]) return peerConnections[targetSid];
             const pc = new RTCPeerConnection(iceServers);
             peerConnections[targetSid] = pc;
-
-            if (mediaStream) {
-                mediaStream.getTracks().forEach(track => pc.addTrack(track, mediaStream));
-            }
+            if (mediaStream) mediaStream.getTracks().forEach(track => pc.addTrack(track, mediaStream));
 
             pc.onicecandidate = e => {
-                if (e.candidate) {
-                    socket.emit('webrtc_signal', { target_sid: targetSid, candidate: e.candidate });
-                }
+                if (e.candidate) socket.emit('webrtc_signal', { target_sid: targetSid, candidate: e.candidate });
             };
 
             pc.ontrack = e => {
                 let audioElem = document.getElementById('audio-' + targetSid);
                 if (!audioElem) {
                     audioElem = document.createElement('audio');
-                    audioElem.id = 'audio-' + targetSid;
-                    audioElem.autoplay = true;
-                    audioElem.playsInline = true;
+                    audioElem.id = 'audio-' + targetSid; audioElem.autoplay = true; audioElem.playsInline = true;
                     document.getElementById('audio-peers-container').appendChild(audioElem);
                 }
                 audioElem.srcObject = e.streams[0];
-                audioElem.play().catch(err => console.log('Autoplay restriction:', err));
+                audioElem.play().catch(err => {});
             };
-
             return pc;
         }
 
@@ -1101,32 +1127,23 @@ HTML_TEMPLATE = """
         socket.on('webrtc_signal', async (data) => {
             const senderSid = data.sender_sid;
             if (senderSid === socket.id) return;
-            
             const pc = createPeer(senderSid);
-
             if (data.offer) {
                 await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
                 const answer = await pc.createAnswer();
                 await pc.setLocalDescription(answer);
                 socket.emit('webrtc_signal', { target_sid: senderSid, answer: answer });
-            } else if (data.answer) {
-                await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
-            } else if (data.candidate) {
-                await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
-            }
+            } else if (data.answer) await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
+            else if (data.candidate) await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
         });
 
         function stopMicMeter() {
             if (micAnimFrame) cancelAnimationFrame(micAnimFrame);
             if (mediaStream) mediaStream.getTracks().forEach(t => t.stop());
             if (audioContext) audioContext.close();
-            
-            for (let sid in peerConnections) {
-                peerConnections[sid].close();
-            }
+            for (let sid in peerConnections) peerConnections[sid].close();
             peerConnections = {};
             document.getElementById('audio-peers-container').innerHTML = '';
-            
             isMicOn = false;
             const myMeterBox = document.getElementById('meter-box-' + currentUser);
             if (myMeterBox) myMeterBox.style.display = 'none';
@@ -1151,7 +1168,6 @@ HTML_TEMPLATE = """
 
         socket.on('mafia_room_update', (data) => {
             if (data.room_id !== activeRoomId) return;
-            
             document.getElementById('mafia-modal-title').innerText = '🕵️ ' + data.name;
             document.getElementById('room-phase-badge').innerText = data.state.toUpperCase();
 
@@ -1160,9 +1176,7 @@ HTML_TEMPLATE = """
                 const left = Math.max(0, data.timer_end - Math.floor(Date.now() / 1000));
                 timerBadge.innerText = `⏱ ${left}s`;
                 timerBadge.style.display = 'inline-block';
-            } else {
-                timerBadge.style.display = 'none';
-            }
+            } else timerBadge.style.display = 'none';
 
             if (data.players[currentUser]) {
                 mySecretRole = data.players[currentUser].role;
@@ -1175,28 +1189,22 @@ HTML_TEMPLATE = """
 
             const table = document.getElementById('poker-table-slots');
             table.innerHTML = '';
-            
             const playerBySlot = {};
-            for (const [uname, pinfo] of Object.entries(data.players)) {
-                playerBySlot[pinfo.slot] = { name: uname, ...pinfo };
-            }
+            for (const [uname, pinfo] of Object.entries(data.players)) playerBySlot[pinfo.slot] = { name: uname, ...pinfo };
 
             for (let s = 0; s < 6; s++) {
                 const slotDiv = document.createElement('div');
                 if (playerBySlot[s]) {
                     const p = playerBySlot[s];
                     slotDiv.className = 'table-slot occupied';
-                    
                     let actBtn = '';
                     if (p.alive && p.name !== currentUser) {
                         if (data.state === 'night' && mySecretRole === 'mafia') actBtn = `<button class="act-btn" onclick="socket.emit('mafia_action', {room_id:'${activeRoomId}', user:'${currentUser}', target:'${p.name}', action:'kill'})">Убить</button>`;
                         if (data.state === 'day') actBtn = `<button class="act-btn" style="background:#f57c00;" onclick="socket.emit('mafia_action', {room_id:'${activeRoomId}', user:'${currentUser}', target:'${p.name}', action:'vote'})">Голос</button>`;
                     }
-
                     const avElem = document.createElement('div');
                     avElem.className = 'slot-avatar';
                     setAvatarElement(avElem, p.name);
-
                     slotDiv.appendChild(avElem);
                     slotDiv.innerHTML += `
                         <div class="slot-name">${p.name}</div>
@@ -1206,10 +1214,7 @@ HTML_TEMPLATE = """
                     `;
                 } else {
                     slotDiv.className = 'table-slot';
-                    slotDiv.innerHTML = `
-                        <div class="slot-avatar" style="background:#333; color:#666;">+</div>
-                        <div class="slot-name" style="color:#777;">Свободно</div>
-                    `;
+                    slotDiv.innerHTML = `<div class="slot-avatar" style="background:#333; color:#666;">+</div><div class="slot-name" style="color:#777;">Свободно</div>`;
                 }
                 table.appendChild(slotDiv);
             }
@@ -1229,8 +1234,7 @@ HTML_TEMPLATE = """
 """
 
 @app.route('/')
-def index():
-    return render_template_string(HTML_TEMPLATE)
+def index(): return render_template_string(HTML_TEMPLATE)
 
 @socketio.on('login')
 def on_login(data):
@@ -1341,6 +1345,29 @@ def on_get_users():
 def on_user_typing(data):
     emit('display_typing', data, room=data['target'], include_self=False)
 
+@socketio.on('pin_msg')
+def on_pin_msg(data):
+    target = data['target']
+    msg = data['msg']
+    if target.startswith('#'):
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("UPDATE channels SET pinned_msg = ? WHERE name = ?", (msg, target))
+        conn.commit()
+        conn.close()
+    emit('update_pinned', {'target': target, 'msg': msg}, broadcast=True)
+
+@socketio.on('mark_read')
+def on_mark_read(data):
+    user = data['user']
+    target = data['target']
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("UPDATE messages SET is_read = 1 WHERE target = ? AND sender = ?", (user, target))
+    conn.commit()
+    conn.close()
+    emit('messages_read', {'user': user, 'target': target}, room=target)
+
 @socketio.on('load_history')
 def on_load_history(data):
     user = data['user']
@@ -1348,15 +1375,20 @@ def on_load_history(data):
     conn = get_db()
     cur = conn.cursor()
     
+    pinned_msg = ""
     if target.startswith('#'):
         join_room(target)
+        cur.execute("SELECT pinned_msg FROM channels WHERE name = ?", (target,))
+        p_row = cur.fetchone()
+        if p_row: pinned_msg = p_row[0]
+
         cur.execute("""
-            SELECT id, sender, target, message, msg_type, reply_to, reply_text, reactions, ttl 
+            SELECT id, sender, target, message, msg_type, reply_to, reply_text, reactions, ttl, is_read, is_edited 
             FROM messages WHERE target = ? ORDER BY id ASC LIMIT 200
         """, (target,))
     else:
         cur.execute("""
-            SELECT id, sender, target, message, msg_type, reply_to, reply_text, reactions, ttl 
+            SELECT id, sender, target, message, msg_type, reply_to, reply_text, reactions, ttl, is_read, is_edited 
             FROM messages 
             WHERE (sender = ? AND target = ?) OR (sender = ? AND target = ?) 
             ORDER BY id ASC LIMIT 200
@@ -1369,9 +1401,9 @@ def on_load_history(data):
     for r in rows:
         msgs.append({
             'id': r[0], 'sender': r[1], 'target': r[2], 'msg': r[3],
-            'msg_type': r[4], 'reply_to': r[5], 'reply_text': r[6], 'reactions': r[7], 'ttl': r[8]
+            'msg_type': r[4], 'reply_to': r[5], 'reply_text': r[6], 'reactions': r[7], 'ttl': r[8], 'is_read': r[9], 'is_edited': r[10]
         })
-    emit('history_loaded', {'messages': msgs})
+    emit('history_loaded', {'messages': msgs, 'pinned_msg': pinned_msg})
 
 @socketio.on('send_msg')
 def on_send_msg(data):
@@ -1384,11 +1416,24 @@ def on_send_msg(data):
     conn.close()
 
     data['id'] = msg_id
+    data['is_read'] = 0
+    data['is_edited'] = 0
     target = data['target']
     if target.startswith('#'): emit('new_msg', data, room=target)
     else:
         emit('new_msg', data, room=target)
         if data['sender'] != target: emit('new_msg', data, room=data['sender'])
+
+@socketio.on('edit_msg')
+def on_edit_msg(data):
+    msg_id = data['msg_id']
+    new_text = data['new_text']
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("UPDATE messages SET message = ?, is_edited = 1 WHERE id = ?", (new_text, msg_id))
+    conn.commit()
+    conn.close()
+    emit('msg_edited', {'msg_id': msg_id, 'new_text': new_text}, broadcast=True)
 
 @socketio.on('add_reaction')
 def on_add_reaction(data):
@@ -1403,7 +1448,6 @@ def on_add_reaction(data):
     if row:
         reactions = json.loads(row[0] or '{}')
         if emoji not in reactions: reactions[emoji] = []
-        
         if user in reactions[emoji]: reactions[emoji].remove(user)
         else: reactions[emoji].append(user)
 
@@ -1432,8 +1476,7 @@ def on_webrtc_join(data):
 def on_webrtc_signal(data):
     target_sid = data.get('target_sid')
     data['sender_sid'] = request.sid
-    if target_sid:
-        emit('webrtc_signal', data, room=target_sid)
+    if target_sid: emit('webrtc_signal', data, room=target_sid)
 
 def broadcast_room_state(room_id):
     room = mafia_rooms[room_id]
@@ -1449,13 +1492,11 @@ def broadcast_room_state(room_id):
 @socketio.on('mafia_get_rooms')
 def on_mafia_get_rooms():
     rinfo = {}
-    for rid, r in mafia_rooms.items():
-        rinfo[rid] = {'name': r.name, 'state': r.state, 'count': len(r.players)}
+    for rid, r in mafia_rooms.items(): rinfo[rid] = {'name': r.name, 'state': r.state, 'count': len(r.players)}
     emit('mafia_rooms_list', {'rooms': rinfo})
 
 @socketio.on('mafia_get_room_state')
-def on_mafia_get_room_state(data):
-    broadcast_room_state(data['room_id'])
+def on_mafia_get_room_state(data): broadcast_room_state(data['room_id'])
 
 @socketio.on('mafia_join')
 def on_mafia_join(data):
@@ -1489,9 +1530,7 @@ def on_mafia_action(data):
     act = data['action']
 
     if room.state == 'night':
-        if act == 'kill' and room.players[user]['role'] == 'mafia':
-            room.night_actions['mafia'][user] = target
-
+        if act == 'kill' and room.players[user]['role'] == 'mafia': room.night_actions['mafia'][user] = target
         alive_mafia = [u for u, p in room.players.items() if p['alive'] and p['role'] == 'mafia']
         if len(room.night_actions['mafia']) >= len(alive_mafia):
             room.process_night()
