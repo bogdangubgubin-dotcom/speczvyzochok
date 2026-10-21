@@ -10,7 +10,6 @@ from flask_socketio import SocketIO, emit, join_room, leave_room
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'speczvyazok_secret_key_2026'
 
-# РАЗРЕШАЕМ ПЕРЕДАЧУ БОЛЬШИХ ИЗОБРАЖЕНИЙ (ДО 10 МБ)
 socketio = SocketIO(app, cors_allowed_origins="*", max_http_buffer_size=10 * 1024 * 1024, async_mode=None)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -60,10 +59,16 @@ def init_db():
             reply_to INTEGER DEFAULT NULL,
             reply_text TEXT DEFAULT '',
             reactions TEXT DEFAULT '{}',
+            ttl INTEGER DEFAULT 0,
             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     """)
     
+    try:
+        cur.execute("ALTER TABLE messages ADD COLUMN ttl INTEGER DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
+
     cur.execute("SELECT username FROM users WHERE username = 'totr'")
     if cur.fetchone():
         cur.execute("UPDATE users SET role = 'admin' WHERE username = 'totr'")
@@ -89,6 +94,7 @@ class MafiaRoom:
         self.night_actions = {'mafia': {}, 'doc': None, 'cop': None}
         self.day_votes = {}
         self.logs = []
+        self.timer_end = 0
 
     def add_player(self, username):
         if self.state == 'lobby' and username not in self.players and len(self.players) < self.max_slots:
@@ -108,6 +114,7 @@ class MafiaRoom:
             if len(self.players) == 0:
                 self.state = 'lobby'
                 self.logs = []
+                self.timer_end = 0
             return True
         return False
 
@@ -131,9 +138,10 @@ class MafiaRoom:
             self.players[u]['mic'] = False
 
         self.state = 'night'
+        self.timer_end = int(time.time()) + 60
         self.night_actions = {'mafia': {}, 'doc': None, 'cop': None}
         self.day_votes = {}
-        self.logs = ["Игра началась! Наступила ночь."]
+        self.logs = ["Игра началась! Наступила ночь (60 сек)."]
         return True, "Игра запущена!"
 
     def check_win(self):
@@ -142,9 +150,11 @@ class MafiaRoom:
 
         if alive_mafia == 0:
             self.state = 'ended'
+            self.timer_end = 0
             return "Мирные жители победили!"
         if alive_mafia >= alive_others:
             self.state = 'ended'
+            self.timer_end = 0
             return "Мафия победила!"
         return None
 
@@ -167,6 +177,7 @@ class MafiaRoom:
             self.logs.append(f"🎉 **{win}**")
         else:
             self.state = 'day'
+            self.timer_end = int(time.time()) + 60
             for u, p in self.players.items():
                 if p['alive']: p['mic'] = True
 
@@ -188,7 +199,8 @@ class MafiaRoom:
             self.logs.append(f"🎉 **{win}**")
         else:
             self.state = 'night'
-            self.logs.append("Наступает ночь... Город засыпает.")
+            self.timer_end = int(time.time()) + 60
+            self.logs.append("Наступает ночь... Город засыпает (60 сек).")
             for u, p in self.players.items(): p['mic'] = False
 
         self.day_votes = {}
@@ -205,73 +217,91 @@ HTML_TEMPLATE = """
 
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
     <style>
+        :root {
+            --bg-color: #121212;
+            --panel-bg: #1e1e1e;
+            --panel-border: #2d2d2d;
+            --text-color: #ffffff;
+            --accent-color: #1F6AA5;
+            --item-hover: #2a2a2a;
+        }
+
+        body.light-theme {
+            --bg-color: #f4f5f7;
+            --panel-bg: #ffffff;
+            --panel-border: #e0e0e0;
+            --text-color: #111111;
+            --accent-color: #0078d4;
+            --item-hover: #eef2f5;
+        }
+
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-        html, body { width: 100vw; height: 100dvh; overflow: hidden; background: #121212; color: #fff; position: fixed; top: 0; left: 0; }
+        html, body { width: 100vw; height: 100dvh; overflow: hidden; background: var(--bg-color); color: var(--text-color); position: fixed; top: 0; left: 0; transition: background 0.3s, color 0.3s; }
         
         #auth-screen { display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100dvh; padding: 20px; }
-        .auth-box { background: #1e1e1e; padding: 25px; border-radius: 16px; width: 100%; max-width: 340px; text-align: center; border: 1px solid #2d2d2d; }
+        .auth-box { background: var(--panel-bg); padding: 25px; border-radius: 16px; width: 100%; max-width: 340px; text-align: center; border: 1px solid var(--panel-border); }
         .auth-box h2 { margin-bottom: 15px; color: #3B8ED0; }
-        input[type="text"], input[type="password"] { width: 100%; padding: 12px; margin: 8px 0; border-radius: 10px; border: 1px solid #333; background: #2a2a2a; color: #fff; outline: none; font-size: 16px; }
-        button { width: 100%; padding: 12px; margin-top: 10px; border-radius: 10px; border: none; background: #1F6AA5; color: #fff; font-weight: bold; cursor: pointer; font-size: 15px; }
+        input[type="text"], input[type="password"] { width: 100%; padding: 12px; margin: 8px 0; border-radius: 10px; border: 1px solid var(--panel-border); background: var(--bg-color); color: var(--text-color); outline: none; font-size: 16px; }
+        button { width: 100%; padding: 12px; margin-top: 10px; border-radius: 10px; border: none; background: var(--accent-color); color: #fff; font-weight: bold; cursor: pointer; font-size: 15px; }
         
         #app-screen { display: none; height: 100dvh; width: 100vw; position: relative; overflow: hidden; }
         
         #sidebar-overlay { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100dvh; background: rgba(0,0,0,0.6); z-index: 9; }
         #sidebar-overlay.active { display: block; }
 
-        #sidebar { width: 280px; background: #1a1a1a; border-right: 2px solid #2d2d2d; display: flex; flex-direction: column; flex-shrink: 0; z-index: 10; height: 100dvh; transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1); }
-        .sidebar-header { padding: 12px 15px; background: #1e1e1e; border-bottom: 1px solid #2d2d2d; font-weight: bold; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+        #sidebar { width: 280px; background: var(--panel-bg); border-right: 2px solid var(--panel-border); display: flex; flex-direction: column; flex-shrink: 0; z-index: 10; height: 100dvh; transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1); }
+        .sidebar-header { padding: 12px 15px; background: var(--panel-bg); border-bottom: 1px solid var(--panel-border); font-weight: bold; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
         .chat-list { flex: 1; overflow-y: auto; padding: 10px; }
         .section-title { font-size: 11px; text-transform: uppercase; color: #888; margin: 12px 8px 6px 8px; font-weight: bold; display: flex; justify-content: space-between; align-items: center; }
         
         .chat-item { padding: 10px 12px; border-radius: 8px; cursor: pointer; margin-bottom: 4px; display: flex; align-items: center; gap: 10px; font-size: 14px; background: transparent; transition: background 0.2s; }
-        .chat-item:hover, .chat-item.active { background: #2a2a2a; }
+        .chat-item:hover, .chat-item.active { background: var(--item-hover); }
         
-        .avatar { width: 34px; height: 34px; border-radius: 50%; background: #3B8ED0; display: flex; align-items: center; justify-content: center; font-weight: bold; color: #fff; font-size: 14px; flex-shrink: 0; background-size: cover; background-position: center; }
+        .avatar { width: 34px; height: 34px; border-radius: 50%; background: #3B8ED0; display: flex; align-items: center; justify-content: center; font-weight: bold; color: #fff; font-size: 14px; flex-shrink: 0; background-size: cover; background-position: center; cursor: pointer; }
         .status-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-left: auto; }
         .online { background: #4caf50; } .offline { background: #757575; }
 
-        #chat-main { flex: 1; display: flex; flex-direction: column; background: #121212; min-width: 0; height: 100dvh; position: relative; }
-        header { height: 56px; background: #1e1e1e; padding: 0 15px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #2d2d2d; flex-shrink: 0; width: 100%; }
+        #chat-main { flex: 1; display: flex; flex-direction: column; background: var(--bg-color); min-width: 0; height: 100dvh; position: relative; }
+        header { height: 56px; background: var(--panel-bg); padding: 0 15px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--panel-border); flex-shrink: 0; width: 100%; }
         .header-left { display: flex; align-items: center; gap: 10px; }
-        .toggle-btn { width: 36px; height: 36px; background: #2a2a2a; border: 1px solid #333; font-size: 18px; border-radius: 8px; color: #fff; cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+        .toggle-btn { width: 36px; height: 36px; background: var(--item-hover); border: 1px solid var(--panel-border); font-size: 18px; border-radius: 8px; color: var(--text-color); cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
 
-        .search-bar { padding: 6px 12px; background: #181818; border-bottom: 1px solid #2d2d2d; display: flex; gap: 8px; }
+        .search-bar { padding: 6px 12px; background: var(--panel-bg); border-bottom: 1px solid var(--panel-border); display: flex; gap: 8px; }
         .search-bar input { margin: 0; padding: 6px 10px; font-size: 13px; height: 32px; border-radius: 6px; width: 100%; }
 
         .chat-container { flex: 1; overflow-y: auto; padding: 25px 15px 85px 15px; display: flex; flex-direction: column; gap: 14px; -webkit-overflow-scrolling: touch; }
         
         .message { max-width: 80%; padding: 10px 14px; border-radius: 14px; font-size: 15px; position: relative; display: flex; flex-direction: column; gap: 4px; word-wrap: break-word; user-select: text; margin-top: 5px; }
-        .msg-me { background: #1F6AA5; align-self: flex-end; border-bottom-right-radius: 2px; }
-        .msg-other { background: #2a2a2a; align-self: flex-start; border-bottom-left-radius: 2px; }
+        .msg-me { background: var(--accent-color); color: #fff; align-self: flex-end; border-bottom-right-radius: 2px; }
+        .msg-other { background: var(--panel-bg); border: 1px solid var(--panel-border); align-self: flex-start; border-bottom-left-radius: 2px; }
         .msg-header { display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: bold; color: #82b1ff; }
         .msg-me .msg-header { justify-content: flex-end; color: #e0e0e0; }
-        .msg-avatar { width: 18px; height: 18px; border-radius: 50%; background-size: cover; background-position: center; display: inline-block; }
+        .msg-avatar { width: 18px; height: 18px; border-radius: 50%; background-size: cover; background-position: center; display: inline-block; cursor: pointer; }
 
-        .msg-actions { display: none; position: absolute; top: -26px; right: 0; background: #1e1e1e; border-radius: 12px; padding: 3px 8px; gap: 8px; border: 1px solid #444; z-index: 50; box-shadow: 0 4px 10px rgba(0,0,0,0.5); }
+        .msg-actions { display: none; position: absolute; top: -26px; right: 0; background: var(--panel-bg); border-radius: 12px; padding: 3px 8px; gap: 8px; border: 1px solid var(--panel-border); z-index: 50; box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
         .message:hover .msg-actions, .message:focus .msg-actions, .message.active-touch .msg-actions { display: flex; }
-        .action-btn { cursor: pointer; font-size: 14px; padding: 2px 4px; color: #fff; border: none; background: transparent; }
+        .action-btn { cursor: pointer; font-size: 14px; padding: 2px 4px; color: var(--text-color); border: none; background: transparent; }
         .action-btn:hover { transform: scale(1.2); }
 
         .reactions-list { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 4px; }
-        .reaction-item { background: rgba(0,0,0,0.3); border-radius: 10px; padding: 2px 6px; font-size: 11px; border: 1px solid #444; cursor: pointer; }
+        .reaction-item { background: rgba(0,0,0,0.2); border-radius: 10px; padding: 2px 6px; font-size: 11px; border: 1px solid var(--panel-border); cursor: pointer; }
 
-        .reply-preview-box { background: rgba(0,0,0,0.3); border-left: 3px solid #3B8ED0; padding: 4px 8px; border-radius: 4px; font-size: 12px; color: #ddd; margin-bottom: 4px; }
+        .reply-preview-box { background: rgba(0,0,0,0.2); border-left: 3px solid #3B8ED0; padding: 4px 8px; border-radius: 4px; font-size: 12px; color: #aaa; margin-bottom: 4px; }
         
-        #reply-bar { display: none; background: #222; padding: 6px 12px; border-top: 1px solid #333; justify-content: space-between; align-items: center; font-size: 13px; color: #3B8ED0; }
+        #reply-bar { display: none; background: var(--panel-bg); padding: 6px 12px; border-top: 1px solid var(--panel-border); justify-content: space-between; align-items: center; font-size: 13px; color: #3B8ED0; }
         
-        footer { position: absolute; bottom: 0; left: 0; right: 0; height: 60px; background: #1e1e1e; padding: 8px 10px; display: flex; gap: 8px; border-top: 1px solid #2d2d2d; align-items: center; z-index: 99; }
-        footer input[type="text"] { flex: 1; height: 42px; background: #2a2a2a; color: #fff; border: 1px solid #333; border-radius: 10px; padding: 0 12px; font-size: 16px; outline: none; }
-        footer button { width: auto; padding: 0 16px; height: 42px; margin: 0; }
-        .file-btn, .voice-btn { background: #333; border: 1px solid #444; border-radius: 10px; padding: 0 12px; height: 42px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: #fff; flex-shrink: 0; }
-        .recording { background: #c62828 !important; }
+        footer { position: absolute; bottom: 0; left: 0; right: 0; height: 60px; background: var(--panel-bg); padding: 8px 10px; display: flex; gap: 6px; border-top: 1px solid var(--panel-border); align-items: center; z-index: 99; }
+        footer input[type="text"] { flex: 1; height: 42px; background: var(--bg-color); color: var(--text-color); border: 1px solid var(--panel-border); border-radius: 10px; padding: 0 12px; font-size: 16px; outline: none; }
+        footer button { width: auto; padding: 0 14px; height: 42px; margin: 0; }
+        .icon-btn { background: var(--item-hover); border: 1px solid var(--panel-border); border-radius: 10px; padding: 0 10px; height: 42px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--text-color); flex-shrink: 0; font-size: 16px; }
+        .recording { background: #c62828 !important; color: #fff !important; }
 
         .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100dvh; background: rgba(0,0,0,0.85); z-index: 1000; justify-content: center; align-items: center; padding: 15px; }
-        .modal-box { background: #1e1e1e; border: 1px solid #333; border-radius: 12px; width: 100%; max-width: 480px; max-height: 90vh; display: flex; flex-direction: column; overflow: hidden; }
-        .modal-header { padding: 15px; background: #252525; border-bottom: 1px solid #333; display: flex; justify-content: space-between; align-items: center; }
+        .modal-box { background: var(--panel-bg); border: 1px solid var(--panel-border); border-radius: 12px; width: 100%; max-width: 480px; max-height: 90vh; display: flex; flex-direction: column; overflow: hidden; }
+        .modal-header { padding: 15px; background: var(--item-hover); border-bottom: 1px solid var(--panel-border); display: flex; justify-content: space-between; align-items: center; }
         .modal-body { padding: 15px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 12px; }
 
-        .room-item { background: #2a2a2a; border: 1px solid #333; border-radius: 10px; padding: 12px; display: flex; justify-content: space-between; align-items: center; }
+        .room-item { background: var(--item-hover); border: 1px solid var(--panel-border); border-radius: 10px; padding: 12px; display: flex; justify-content: space-between; align-items: center; }
         .room-title { font-weight: bold; font-size: 15px; }
         .room-info { font-size: 12px; color: #aaa; }
         
@@ -290,6 +320,14 @@ HTML_TEMPLATE = """
 
         .avatar-upload-box { display: flex; flex-direction: column; align-items: center; gap: 10px; margin-bottom: 10px; }
         .big-avatar { width: 70px; height: 70px; border-radius: 50%; background: #3B8ED0; display: flex; align-items: center; justify-content: center; font-size: 28px; font-weight: bold; color: #fff; background-size: cover; background-position: center; border: 2px solid #555; }
+
+        /* ЭМОДЗИ ПИКЕР И LIGHTBOX */
+        #emoji-picker { display: none; position: absolute; bottom: 65px; right: 10px; background: var(--panel-bg); border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px; grid-template-columns: repeat(5, 1fr); gap: 8px; z-index: 100; font-size: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
+        #emoji-picker span { cursor: pointer; text-align: center; }
+        #emoji-picker span:hover { transform: scale(1.3); }
+
+        #lightbox { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100dvh; background: rgba(0,0,0,0.9); z-index: 2000; justify-content: center; align-items: center; }
+        #lightbox img { max-width: 90%; max-height: 90%; border-radius: 8px; box-shadow: 0 0 20px rgba(0,0,0,0.8); }
 
         @media (max-width: 600px) {
             #sidebar { position: fixed; left: 0; top: 0; bottom: 0; width: 80%; max-width: 280px; transform: translateX(-100%); }
@@ -323,7 +361,10 @@ HTML_TEMPLATE = """
                 <button class="logout-btn" onclick="logout()">Выйти</button>
             </div>
             <div class="chat-list">
-                <div class="section-title">Каналы</div>
+                <div class="section-title">
+                    <span>Каналы</span>
+                    <button onclick="createChannelPrompt()" style="width:auto; padding:0 6px; height:20px; font-size:12px;">+</button>
+                </div>
                 <div id="channels-list"></div>
                 <div class="section-title">Личные чаты</div>
                 <div id="users-list"></div>
@@ -336,6 +377,7 @@ HTML_TEMPLATE = """
                     <button class="toggle-btn" onclick="event.stopPropagation(); toggleSidebar();">☰</button>
                     <div class="header-title-box">
                         <h3 id="chat-title">#general</h3>
+                        <div id="typing-indicator" style="font-size:11px; color:#3B8ED0; height:13px;"></div>
                     </div>
                 </div>
                 <div style="display:flex; align-items:center; gap:8px;">
@@ -355,13 +397,32 @@ HTML_TEMPLATE = """
                 <button onclick="cancelReply()" style="width:auto; padding:2px 8px; background:transparent; border:none; color:#aaa; cursor:pointer;">✕</button>
             </div>
 
+            <div id="emoji-picker">
+                <span onclick="addEmoji('👍')">👍</span>
+                <span onclick="addEmoji('❤️')">❤️</span>
+                <span onclick="addEmoji('🔥')">🔥</span>
+                <span onclick="addEmoji('😂')">😂</span>
+                <span onclick="addEmoji('😮')">😮</span>
+                <span onclick="addEmoji('🎉')">🎉</span>
+                <span onclick="addEmoji('💩')">💩</span>
+                <span onclick="addEmoji('👀')">👀</span>
+                <span onclick="addEmoji('💯')">💯</span>
+                <span onclick="addEmoji('🤝')">🤝</span>
+            </div>
+
             <footer>
-                <label class="file-btn" title="Прикрепить файл">
+                <label class="icon-btn" title="Прикрепить файл">
                     📎
                     <input type="file" id="file-input" style="display:none;" onchange="sendFile()">
                 </label>
-                <button id="voice-record-btn" class="voice-btn" onclick="toggleVoiceRecord()" title="Голосовое сообщение">🎤</button>
-                <input type="text" id="msg-input" placeholder="Сообщение..." onkeypress="if(event.key==='Enter') sendMsg()">
+                <button id="voice-record-btn" class="icon-btn" onclick="toggleVoiceRecord()" title="Голосовое сообщение">🎤</button>
+                <button class="icon-btn" onclick="toggleEmojiPicker()" title="Смайлики">😀</button>
+                <select id="ttl-select" class="icon-btn" style="padding:0 4px; font-size:12px;" title="Таймер уничтожения сообщения">
+                    <option value="0">Off</option>
+                    <option value="10">10s</option>
+                    <option value="60">1m</option>
+                </select>
+                <input type="text" id="msg-input" placeholder="Сообщение..." oninput="notifyTyping()" onkeypress="if(event.key==='Enter') sendMsg()">
                 <button onclick="sendMsg()">></button>
             </footer>
         </div>
@@ -376,15 +437,17 @@ HTML_TEMPLATE = """
             </div>
             <div class="modal-body">
                 <div class="avatar-upload-box">
-                    <div id="profile-big-avatar" class="big-avatar">?</div>
+                    <div id="profile-big-avatar" class="big-avatar" onclick="openLightbox(this.style.backgroundImage)">?</div>
                     <label style="background:#333; padding:6px 12px; border-radius:8px; border:1px solid #555; font-size:12px; cursor:pointer;">
                         📷 Изменить аватарку
                         <input type="file" id="avatar-input" accept="image/*" style="display:none;" onchange="uploadAvatar()">
                     </label>
                 </div>
 
+                <button onclick="toggleTheme()" style="background:#444; margin-bottom:5px;">🌗 Сменить тему оформления</button>
                 <button onclick="openMafiaModal()" style="background:#8e24aa; margin-bottom:10px; padding:12px;">🕵️ Игра «Мафия»</button>
-                <hr style="border:0; border-top:1px solid #333; margin:10px 0;">
+                
+                <hr style="border:0; border-top:1px solid var(--panel-border); margin:10px 0;">
                 <h4 style="font-size:14px; color:#aaa;">Смена пароля</h4>
                 <input type="password" id="old-pass" placeholder="Старый пароль">
                 <input type="password" id="new-pass" placeholder="Новый пароль">
@@ -422,8 +485,9 @@ HTML_TEMPLATE = """
 
                 <div id="mafia-gameplay-screen" style="display:none;">
                     <div style="display:flex; justify-content:space-between; align-items:center;">
-                        <button onclick="backToMafiaRooms()" style="width:auto; padding:6px 12px; background:#444; font-size:12px;">← Назад к комнатам</button>
+                        <button onclick="backToMafiaRooms()" style="width:auto; padding:6px 12px; background:#444; font-size:12px;">← Назад</button>
                         <span id="room-phase-badge" style="background:#3B8ED0; padding:4px 8px; border-radius:6px; font-size:12px; font-weight:bold;">Лобби</span>
+                        <span id="mafia-timer-badge" style="background:#d32f2f; padding:4px 8px; border-radius:6px; font-size:12px; font-weight:bold; display:none;">⏱ 60s</span>
                     </div>
 
                     <div class="poker-table" id="poker-table-slots"></div>
@@ -444,6 +508,11 @@ HTML_TEMPLATE = """
                 </div>
             </div>
         </div>
+    </div>
+
+    <!-- LIGHTBOX (ПРОСМОТР КАРТИНКИ) -->
+    <div id="lightbox" onclick="this.style.display='none'">
+        <img id="lightbox-img" src="">
     </div>
 
     <div id="audio-peers-container" style="display:none;"></div>
@@ -469,29 +538,58 @@ HTML_TEMPLATE = """
         let activeReplyMsg = null;
         let allLoadedMessages = {};
         let userAvatarsMap = {};
+        let typingTimeout = null;
 
         const iceServers = { 
             iceServers: [
                 { urls: 'stun:stun.l.google.com:19302' },
                 { urls: 'stun:stun1.l.google.com:19302' },
-                {
-                    urls: 'turn:openrelay.metered.ca:80',
-                    username: 'openrelayproject',
-                    credential: 'openrelayproject'
-                },
-                {
-                    urls: 'turn:openrelay.metered.ca:443',
-                    username: 'openrelayproject',
-                    credential: 'openrelayproject'
-                }
+                { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+                { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' }
             ] 
         };
 
+        // ЗАПРОС РАЗРЕШЕНИЯ НА PUSH УВЕДОМЛЕНИЯ
+        if ("Notification" in window && Notification.permission === "default") {
+            Notification.requestPermission();
+        }
+
+        // ВОСПРОИЗВЕДЕНИЕ СИНТЕТИЧЕСКОГО ЗВУКА ВХОДЯЩЕГО СООБЩЕНИЯ
+        function playNotificationSound() {
+            try {
+                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.frequency.value = 587.33; // D5 note
+                gain.gain.setValueAtTime(0.1, ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
+                osc.start();
+                osc.stop(ctx.currentTime + 0.3);
+            } catch(e){}
+        }
+
         document.addEventListener('visibilitychange', () => {
-            if (document.visibilityState === 'visible') {
-                if (!socket.connected) socket.connect();
-            }
+            if (document.visibilityState === 'visible' && !socket.connected) socket.connect();
         });
+
+        function toggleTheme() {
+            document.body.classList.toggle('light-theme');
+            const isLight = document.body.classList.contains('light-theme');
+            localStorage.setItem('pychat_theme', isLight ? 'light' : 'dark');
+        }
+
+        if (localStorage.getItem('pychat_theme') === 'light') {
+            document.body.classList.add('light-theme');
+        }
+
+        function openLightbox(bgStyleUrl) {
+            let url = bgStyleUrl.replace('url("', '').replace('")', '').replace("url('", '').replace("')", '');
+            if (!url || url === 'none') return;
+            document.getElementById('lightbox-img').src = url;
+            document.getElementById('lightbox').style.display = 'flex';
+        }
 
         function getAvatarColor(name) {
             let hash = 0;
@@ -552,14 +650,19 @@ HTML_TEMPLATE = """
             }
         });
 
-        // ЗАГРУЗКА И СЖАТИЕ АВАТАРКИ ПЕРЕД ОТПРАВКОЙ
+        function createChannelPrompt() {
+            const chName = prompt("Введите название нового канала (начиная с #):");
+            if (chName && chName.startsWith('#')) {
+                socket.emit('create_channel', { name: chName, creator: currentUser });
+            } else if (chName) alert("Название должно начинаться с символа #");
+        }
+
         function uploadAvatar() {
             const file = document.getElementById('avatar-input').files[0];
             if (!file) return;
 
             const img = new Image();
             const reader = new FileReader();
-
             reader.onload = function(e) {
                 img.src = e.target.result;
                 img.onload = function() {
@@ -568,7 +671,6 @@ HTML_TEMPLATE = """
                     canvas.width = 200;
                     canvas.height = 200;
                     ctx.drawImage(img, 0, 0, 200, 200);
-                    
                     const compressedB64 = canvas.toDataURL('image/jpeg', 0.8);
                     socket.emit('update_avatar', { user: currentUser, avatar: compressedB64 });
                 };
@@ -583,7 +685,6 @@ HTML_TEMPLATE = """
                 setAvatarElement(document.getElementById('profile-big-avatar'), currentUser);
             }
             socket.emit('get_users');
-            if (activeRoomId) socket.emit('mafia_get_room_state', { room_id: activeRoomId });
         });
 
         function toggleSidebar() {
@@ -665,11 +766,35 @@ HTML_TEMPLATE = """
             }
         });
 
+        function notifyTyping() {
+            socket.emit('user_typing', { sender: currentUser, target: currentTarget });
+        }
+
+        socket.on('display_typing', (data) => {
+            if (data.target === currentTarget || data.sender === currentTarget) {
+                const ind = document.getElementById('typing-indicator');
+                ind.innerText = data.sender + ' печатает...';
+                clearTimeout(typingTimeout);
+                typingTimeout = setTimeout(() => { ind.innerText = ''; }, 3000);
+            }
+        });
+
+        function toggleEmojiPicker() {
+            const picker = document.getElementById('emoji-picker');
+            picker.style.display = picker.style.display === 'grid' ? 'none' : 'grid';
+        }
+
+        function addEmoji(emoji) {
+            document.getElementById('msg-input').value += emoji;
+            document.getElementById('emoji-picker').style.display = 'none';
+        }
+
         function sendMsg() {
             const txt = document.getElementById('msg-input').value.trim();
+            const ttl = parseInt(document.getElementById('ttl-select').value) || 0;
             if (!txt) return;
             socket.emit('send_msg', {
-                sender: currentUser, target: currentTarget, msg: txt, msg_type: 'text',
+                sender: currentUser, target: currentTarget, msg: txt, msg_type: 'text', ttl: ttl,
                 reply_to: activeReplyMsg ? activeReplyMsg.id : null,
                 reply_text: activeReplyMsg ? activeReplyMsg.sender + ': ' + activeReplyMsg.msg : ''
             });
@@ -728,6 +853,12 @@ HTML_TEMPLATE = """
         }
 
         socket.on('new_msg', (data) => { 
+            if (data.sender !== currentUser) {
+                playNotificationSound();
+                if (document.hidden && Notification.permission === "granted") {
+                    new Notification("Сообщение от " + data.sender, { body: data.msg });
+                }
+            }
             if (data.target === currentTarget || data.sender === currentTarget || (data.target.startsWith('#') && data.target === currentTarget)) {
                 appendMessage(data); 
             }
@@ -758,6 +889,8 @@ HTML_TEMPLATE = """
                 contentHtml = `<audio controls playsinline src="data:audio/webm;base64,${msg.msg}" style="height:32px; width:180px;"></audio>`;
             }
 
+            let ttlBadge = msg.ttl > 0 ? `<span style="font-size:10px; color:#ff9800;"> 💣 (${msg.ttl}s)</span>` : '';
+
             let reactionsObj = {};
             try { reactionsObj = JSON.parse(msg.reactions || '{}'); } catch(e){}
             let reactionsHtml = '';
@@ -782,8 +915,8 @@ HTML_TEMPLATE = """
                 </div>
                 ${replyHtml}
                 <div class="msg-header">
-                    <span class="msg-avatar" style="${msgAvStyle}"></span>
-                    <span>${isMe ? 'Вы' : msg.sender}</span>
+                    <span class="msg-avatar" style="${msgAvStyle}" onclick="openLightbox('${avatarUrl}')"></span>
+                    <span>${isMe ? 'Вы' : msg.sender}${ttlBadge}</span>
                 </div>
                 ${contentHtml}
                 <div class="reactions-list">${reactionsHtml}</div>
@@ -796,6 +929,12 @@ HTML_TEMPLATE = """
             });
 
             box.scrollTop = box.scrollHeight;
+
+            if (msg.ttl > 0) {
+                setTimeout(() => {
+                    deleteMessage(msg.id);
+                }, msg.ttl * 1000);
+            }
         }
 
         function setReplyMsg(id) {
@@ -1016,6 +1155,15 @@ HTML_TEMPLATE = """
             document.getElementById('mafia-modal-title').innerText = '🕵️ ' + data.name;
             document.getElementById('room-phase-badge').innerText = data.state.toUpperCase();
 
+            const timerBadge = document.getElementById('mafia-timer-badge');
+            if (data.timer_end > 0) {
+                const left = Math.max(0, data.timer_end - Math.floor(Date.now() / 1000));
+                timerBadge.innerText = `⏱ ${left}s`;
+                timerBadge.style.display = 'inline-block';
+            } else {
+                timerBadge.style.display = 'none';
+            }
+
             if (data.players[currentUser]) {
                 mySecretRole = data.players[currentUser].role;
                 document.getElementById('join-room-btn').style.display = 'none';
@@ -1132,6 +1280,28 @@ def on_update_avatar(data):
     conn.close()
     emit('avatar_updated', {'user': user, 'avatar': avatar}, broadcast=True)
 
+@socketio.on('create_channel')
+def on_create_channel(data):
+    ch_name = data['name'].strip()
+    creator = data['creator']
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute("INSERT INTO channels (name, creator) VALUES (?, ?)", (ch_name, creator))
+        conn.commit()
+        join_room(ch_name)
+    except sqlite3.IntegrityError: pass
+    finally: conn.close()
+    emit('channels_list', {'channels': get_all_channels()}, broadcast=True)
+
+def get_all_channels():
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT name FROM channels")
+    chs = [r[0] for r in cur.fetchall()]
+    conn.close()
+    return chs
+
 @socketio.on('change_password')
 def on_change_password(data):
     user = data['user']
@@ -1156,7 +1326,7 @@ def on_change_password(data):
     emit('pass_response', {'status': 'error', 'message': 'Неверный старый пароль!'})
 
 @socketio.on('get_channels')
-def on_get_channels(): emit('channels_list', {'channels': ['#general']})
+def on_get_channels(): emit('channels_list', {'channels': get_all_channels()})
 
 @socketio.on('get_users')
 def on_get_users():
@@ -1167,6 +1337,10 @@ def on_get_users():
     conn.close()
     emit('users_list', {'users': users}, broadcast=True)
 
+@socketio.on('user_typing')
+def on_user_typing(data):
+    emit('display_typing', data, room=data['target'], include_self=False)
+
 @socketio.on('load_history')
 def on_load_history(data):
     user = data['user']
@@ -1175,13 +1349,14 @@ def on_load_history(data):
     cur = conn.cursor()
     
     if target.startswith('#'):
+        join_room(target)
         cur.execute("""
-            SELECT id, sender, target, message, msg_type, reply_to, reply_text, reactions 
+            SELECT id, sender, target, message, msg_type, reply_to, reply_text, reactions, ttl 
             FROM messages WHERE target = ? ORDER BY id ASC LIMIT 200
         """, (target,))
     else:
         cur.execute("""
-            SELECT id, sender, target, message, msg_type, reply_to, reply_text, reactions 
+            SELECT id, sender, target, message, msg_type, reply_to, reply_text, reactions, ttl 
             FROM messages 
             WHERE (sender = ? AND target = ?) OR (sender = ? AND target = ?) 
             ORDER BY id ASC LIMIT 200
@@ -1194,7 +1369,7 @@ def on_load_history(data):
     for r in rows:
         msgs.append({
             'id': r[0], 'sender': r[1], 'target': r[2], 'msg': r[3],
-            'msg_type': r[4], 'reply_to': r[5], 'reply_text': r[6], 'reactions': r[7]
+            'msg_type': r[4], 'reply_to': r[5], 'reply_text': r[6], 'reactions': r[7], 'ttl': r[8]
         })
     emit('history_loaded', {'messages': msgs})
 
@@ -1202,8 +1377,8 @@ def on_load_history(data):
 def on_send_msg(data):
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("INSERT INTO messages (sender, target, message, msg_type, reply_to, reply_text) VALUES (?, ?, ?, ?, ?, ?)",
-                (data['sender'], data['target'], data['msg'], data.get('msg_type', 'text'), data.get('reply_to'), data.get('reply_text', '')))
+    cur.execute("INSERT INTO messages (sender, target, message, msg_type, reply_to, reply_text, ttl) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (data['sender'], data['target'], data['msg'], data.get('msg_type', 'text'), data.get('reply_to'), data.get('reply_text', ''), data.get('ttl', 0)))
     msg_id = cur.lastrowid
     conn.commit()
     conn.close()
@@ -1267,7 +1442,8 @@ def broadcast_room_state(room_id):
         'name': room.name,
         'state': room.state,
         'players': room.players,
-        'logs': room.logs
+        'logs': room.logs,
+        'timer_end': room.timer_end
     }, broadcast=True)
 
 @socketio.on('mafia_get_rooms')
