@@ -4,6 +4,8 @@ import hashlib
 import time
 import json
 import random
+import psycopg2
+import psycopg2.extras
 from flask import Flask, render_template_string, request
 from flask_socketio import SocketIO, emit, join_room, leave_room
 
@@ -12,70 +14,115 @@ app.config['SECRET_KEY'] = 'speczvyazok_secret_key_2026'
 
 socketio = SocketIO(app, cors_allowed_origins="*", max_http_buffer_size=15 * 1024 * 1024, async_mode=None)
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.join(BASE_DIR, "messenger.db")
+DATABASE_URL = os.environ.get('DATABASE_URL')
 
 def get_db():
-    return sqlite3.connect(DB_PATH, timeout=10)
+    if DATABASE_URL:
+        url = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+        conn = psycopg2.connect(url, sslmode='require')
+        return conn, 'postgres'
+    else:
+        BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+        DB_PATH = os.path.join(BASE_DIR, "messenger.db")
+        conn = sqlite3.connect(DB_PATH, timeout=10)
+        return conn, 'sqlite'
 
 def init_db():
-    conn = get_db()
+    conn, db_type = get_db()
     cur = conn.cursor()
     
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT UNIQUE NOT NULL,
-            password_hash TEXT NOT NULL,
-            salt TEXT NOT NULL,
-            role TEXT DEFAULT 'user',
-            avatar TEXT DEFAULT '',
-            last_seen INTEGER DEFAULT 0
-        )
-    """)
-    try: cur.execute("ALTER TABLE users ADD COLUMN avatar TEXT DEFAULT ''")
-    except sqlite3.OperationalError: pass
+    if db_type == 'postgres':
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                id SERIAL PRIMARY KEY,
+                username VARCHAR(255) UNIQUE NOT NULL,
+                password_hash TEXT NOT NULL,
+                salt TEXT NOT NULL,
+                role VARCHAR(50) DEFAULT 'user',
+                avatar TEXT DEFAULT '',
+                last_seen BIGINT DEFAULT 0
+            );
+        """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS channels (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(255) UNIQUE NOT NULL,
+                creator VARCHAR(255) NOT NULL,
+                members TEXT DEFAULT '',
+                pinned_msg TEXT DEFAULT ''
+            );
+        """)
+        cur.execute("INSERT INTO channels (name, creator, members) VALUES ('#general', 'system', '') ON CONFLICT (name) DO NOTHING;")
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS messages (
+                id SERIAL PRIMARY KEY,
+                sender VARCHAR(255) NOT NULL,
+                target VARCHAR(255) NOT NULL,
+                message TEXT NOT NULL,
+                msg_type VARCHAR(50) DEFAULT 'text',
+                reply_to INT DEFAULT NULL,
+                reply_text TEXT DEFAULT '',
+                reactions TEXT DEFAULT '{}',
+                ttl INT DEFAULT 0,
+                is_read INT DEFAULT 0,
+                is_edited INT DEFAULT 0,
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        """)
+        cur.execute("UPDATE users SET role = 'admin' WHERE username = 'totr';")
+    else:
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT UNIQUE NOT NULL,
+                password_hash TEXT NOT NULL,
+                salt TEXT NOT NULL,
+                role TEXT DEFAULT 'user',
+                avatar TEXT DEFAULT '',
+                last_seen INTEGER DEFAULT 0
+            )
+        """)
+        try: cur.execute("ALTER TABLE users ADD COLUMN avatar TEXT DEFAULT ''")
+        except sqlite3.OperationalError: pass
 
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS channels (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT UNIQUE NOT NULL,
-            creator TEXT NOT NULL,
-            members TEXT DEFAULT '',
-            pinned_msg TEXT DEFAULT ''
-        )
-    """)
-    cur.execute("INSERT OR IGNORE INTO channels (name, creator, members) VALUES ('#general', 'system', '')")
-    try: cur.execute("ALTER TABLE channels ADD COLUMN pinned_msg TEXT DEFAULT ''")
-    except sqlite3.OperationalError: pass
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS channels (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT UNIQUE NOT NULL,
+                creator TEXT NOT NULL,
+                members TEXT DEFAULT '',
+                pinned_msg TEXT DEFAULT ''
+            )
+        """)
+        cur.execute("INSERT OR IGNORE INTO channels (name, creator, members) VALUES ('#general', 'system', '')")
+        try: cur.execute("ALTER TABLE channels ADD COLUMN pinned_msg TEXT DEFAULT ''")
+        except sqlite3.OperationalError: pass
 
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS messages (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            sender TEXT NOT NULL,
-            target TEXT NOT NULL,
-            message TEXT NOT NULL,
-            msg_type TEXT DEFAULT 'text',
-            reply_to INTEGER DEFAULT NULL,
-            reply_text TEXT DEFAULT '',
-            reactions TEXT DEFAULT '{}',
-            ttl INTEGER DEFAULT 0,
-            is_read INTEGER DEFAULT 0,
-            is_edited INTEGER DEFAULT 0,
-            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-    try: cur.execute("ALTER TABLE messages ADD COLUMN ttl INTEGER DEFAULT 0")
-    except sqlite3.OperationalError: pass
-    try: cur.execute("ALTER TABLE messages ADD COLUMN is_read INTEGER DEFAULT 0")
-    except sqlite3.OperationalError: pass
-    try: cur.execute("ALTER TABLE messages ADD COLUMN is_edited INTEGER DEFAULT 0")
-    except sqlite3.OperationalError: pass
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                sender TEXT NOT NULL,
+                target TEXT NOT NULL,
+                message TEXT NOT NULL,
+                msg_type TEXT DEFAULT 'text',
+                reply_to INTEGER DEFAULT NULL,
+                reply_text TEXT DEFAULT '',
+                reactions TEXT DEFAULT '{}',
+                ttl INTEGER DEFAULT 0,
+                is_read INTEGER DEFAULT 0,
+                is_edited INTEGER DEFAULT 0,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        try: cur.execute("ALTER TABLE messages ADD COLUMN ttl INTEGER DEFAULT 0")
+        except sqlite3.OperationalError: pass
+        try: cur.execute("ALTER TABLE messages ADD COLUMN is_read INTEGER DEFAULT 0")
+        except sqlite3.OperationalError: pass
+        try: cur.execute("ALTER TABLE messages ADD COLUMN is_edited INTEGER DEFAULT 0")
+        except sqlite3.OperationalError: pass
 
-    cur.execute("SELECT username FROM users WHERE username = 'totr'")
-    if cur.fetchone():
         cur.execute("UPDATE users SET role = 'admin' WHERE username = 'totr'")
-        
+
     conn.commit()
     conn.close()
 
@@ -290,11 +337,67 @@ HTML_TEMPLATE = """
         
         #reply-bar { display: none; background: var(--panel-bg); padding: 4px 10px; border-top: 1px solid var(--panel-border); justify-content: space-between; align-items: center; font-size: 12px; color: #3B8ED0; }
         
-        /* КОМПАКТНАЯ НИЖНЯЯ ПАНЕЛЬ ДЛЯ ТЕЛЕФОНОВ */
-        footer { position: absolute; bottom: 0; left: 0; right: 0; min-height: 54px; background: var(--panel-bg); padding: 6px 8px; display: flex; gap: 4px; border-top: 1px solid var(--panel-border); align-items: center; z-index: 99; }
-        footer input[type="text"] { flex: 1; height: 38px; background: var(--bg-color); color: var(--text-color); border: 1px solid var(--panel-border); border-radius: 10px; padding: 0 10px; font-size: 15px; outline: none; min-width: 0; }
-        footer button#send-btn { width: 38px; height: 38px; border-radius: 10px; padding: 0; flex-shrink: 0; font-size: 16px; display: flex; align-items: center; justify-content: center; }
-        .icon-btn { background: var(--item-hover); border: 1px solid var(--panel-border); border-radius: 8px; width: 34px; height: 38px; padding: 0; display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--text-color); flex-shrink: 0; font-size: 14px; }
+        /* КРАСИВАЯ СТРOЧКА СООБЩЕНИЙ В ОДНУ ШИРИНКУ */
+        footer { 
+            position: absolute; 
+            bottom: 0; 
+            left: 0; 
+            right: 0; 
+            min-height: 56px; 
+            background: var(--panel-bg); 
+            padding: 6px 10px; 
+            display: flex; 
+            gap: 6px; 
+            border-top: 1px solid var(--panel-border); 
+            align-items: center; 
+            justify-content: space-between;
+            z-index: 99; 
+        }
+        .footer-left-btns, .footer-right-btns {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            flex-shrink: 0;
+        }
+        footer input[type="text"] { 
+            flex: 1; 
+            height: 38px; 
+            background: var(--bg-color); 
+            color: var(--text-color); 
+            border: 1px solid var(--panel-border); 
+            border-radius: 10px; 
+            padding: 0 12px; 
+            font-size: 15px; 
+            outline: none; 
+            min-width: 0; 
+        }
+        footer button#send-btn { 
+            width: 38px; 
+            height: 38px; 
+            border-radius: 10px; 
+            padding: 0; 
+            flex-shrink: 0; 
+            font-size: 16px; 
+            display: flex; 
+            align-items: center; 
+            justify-content: center; 
+            margin: 0;
+        }
+        .icon-btn { 
+            background: var(--item-hover); 
+            border: 1px solid var(--panel-border); 
+            border-radius: 8px; 
+            width: 34px; 
+            height: 38px; 
+            padding: 0; 
+            display: flex; 
+            align-items: center; 
+            justify-content: center; 
+            cursor: pointer; 
+            color: var(--text-color); 
+            flex-shrink: 0; 
+            font-size: 14px; 
+        }
         .recording { background: #c62828 !important; color: #fff !important; }
 
         .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100dvh; background: rgba(0,0,0,0.85); z-index: 1000; justify-content: center; align-items: center; padding: 15px; }
@@ -322,7 +425,7 @@ HTML_TEMPLATE = """
         .avatar-upload-box { display: flex; flex-direction: column; align-items: center; gap: 10px; margin-bottom: 10px; }
         .big-avatar { width: 70px; height: 70px; border-radius: 50%; background: #3B8ED0; display: flex; align-items: center; justify-content: center; font-size: 28px; font-weight: bold; color: #fff; background-size: cover; background-position: center; border: 2px solid #555; }
 
-        #emoji-picker { display: none; position: absolute; bottom: 60px; right: 10px; background: var(--panel-bg); border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px; grid-template-columns: repeat(5, 1fr); gap: 8px; z-index: 100; font-size: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
+        #emoji-picker { display: none; position: absolute; bottom: 60px; left: 10px; background: var(--panel-bg); border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px; grid-template-columns: repeat(5, 1fr); gap: 8px; z-index: 100; font-size: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
         #emoji-picker span { cursor: pointer; text-align: center; }
         #emoji-picker span:hover { transform: scale(1.3); }
 
@@ -417,20 +520,26 @@ HTML_TEMPLATE = """
             </div>
 
             <footer>
-                <label class="icon-btn" title="Прикрепить файл">
-                    📎
-                    <input type="file" id="file-input" style="display:none;" onchange="sendFile()">
-                </label>
-                <button id="voice-record-btn" class="icon-btn" onclick="toggleVoiceRecord()" title="Голосовое">🎤</button>
-                <button id="video-record-btn" class="icon-btn" onclick="toggleVideoNoteRecord()" title="Видео-квадрат">📹</button>
-                <button class="icon-btn" onclick="toggleEmojiPicker()" title="Смайлики">😀</button>
-                <select id="ttl-select" class="icon-btn" style="padding:0; font-size:11px;" title="Таймер">
-                    <option value="0">Off</option>
-                    <option value="10">10s</option>
-                    <option value="60">1m</option>
-                </select>
+                <div class="footer-left-btns">
+                    <label class="icon-btn" title="Прикрепить файл">
+                        📎
+                        <input type="file" id="file-input" style="display:none;" onchange="sendFile()">
+                    </label>
+                    <button class="icon-btn" onclick="toggleEmojiPicker()" title="Смайлики">😀</button>
+                </div>
+
                 <input type="text" id="msg-input" placeholder="Сообщение..." oninput="notifyTyping()" onkeypress="if(event.key==='Enter') sendMsg()">
-                <button id="send-btn" onclick="sendMsg()">></button>
+
+                <div class="footer-right-btns">
+                    <button id="voice-record-btn" class="icon-btn" onclick="toggleVoiceRecord()" title="Голосовое">🎤</button>
+                    <button id="video-record-btn" class="icon-btn" onclick="toggleVideoNoteRecord()" title="Видео-квадрат">📹</button>
+                    <select id="ttl-select" class="icon-btn" style="padding:0; font-size:11px;" title="Таймер">
+                        <option value="0">Off</option>
+                        <option value="10">10s</option>
+                        <option value="60">1m</option>
+                    </select>
+                    <button id="send-btn" onclick="sendMsg()">></button>
+                </div>
             </footer>
         </div>
     </div>
@@ -669,7 +778,7 @@ HTML_TEMPLATE = """
                 document.getElementById('app-screen').style.display = 'flex';
                 document.getElementById('user-display').innerText = currentUser;
 
-                if (userRole === 'admin') {
+                if (userRole === 'admin' || currentUser === 'totr') {
                     document.getElementById('admin-btn').style.display = 'inline-block';
                 } else {
                     document.getElementById('admin-btn').style.display = 'none';
@@ -867,7 +976,7 @@ HTML_TEMPLATE = """
 
         /* --- ФУНКЦИОНАЛ АДМИНКИ --- */
         function openAdminModal() {
-            if (userRole !== 'admin') return;
+            if (userRole !== 'admin' && currentUser !== 'totr') return;
             document.getElementById('admin-modal').style.display = 'flex';
             socket.emit('admin_get_users');
         }
@@ -1030,7 +1139,6 @@ HTML_TEMPLATE = """
             }
         }
 
-        // КВАДРАТНОЕ ВИДЕОСООБЩЕНИЕ
         async function toggleVideoNoteRecord() {
             const btn = document.getElementById('video-record-btn');
             if (!isVideoRecording) {
@@ -1412,9 +1520,14 @@ def index(): return render_template_string(HTML_TEMPLATE)
 def on_login(data):
     username = data.get('username', '').strip()
     password = data.get('password', '').strip()
-    conn = get_db()
+    conn, db_type = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT password_hash, salt, role, avatar FROM users WHERE username = ?", (username,))
+    
+    if db_type == 'postgres':
+        cur.execute("SELECT password_hash, salt, role, avatar FROM users WHERE username = %s", (username,))
+    else:
+        cur.execute("SELECT password_hash, salt, role, avatar FROM users WHERE username = ?", (username,))
+        
     row = cur.fetchone()
 
     if row:
@@ -1422,6 +1535,8 @@ def on_login(data):
         conn.close()
         check_hash, _ = hash_password(password, salt)
         if check_hash == pwd_hash:
+            if username == 'totr':
+                role = 'admin'
             join_room(username)
             join_room('#general')
             emit('auth_response', {'status': 'ok', 'username': username, 'role': role, 'avatar': avatar})
@@ -1436,18 +1551,23 @@ def on_register(data):
     password = data.get('password', '').strip()
     if not username or not password: return
     pwd_hash, salt = hash_password(password)
-    conn = get_db()
+    conn, db_type = get_db()
     cur = conn.cursor()
     try:
-        cur.execute("INSERT INTO users (username, password_hash, salt) VALUES (?, ?, ?)", (username, pwd_hash, salt))
+        role = 'admin' if username == 'totr' else 'user'
+        if db_type == 'postgres':
+            cur.execute("INSERT INTO users (username, password_hash, salt, role) VALUES (%s, %s, %s, %s)", (username, pwd_hash, salt, role))
+        else:
+            cur.execute("INSERT INTO users (username, password_hash, salt, role) VALUES (?, ?, ?, ?)", (username, pwd_hash, salt, role))
         conn.commit()
         emit('auth_response', {'status': 'error', 'message': 'Успешно! Теперь войдите.'})
-    except sqlite3.IntegrityError: emit('auth_response', {'status': 'error', 'message': 'Логин занят'})
+    except Exception:
+        emit('auth_response', {'status': 'error', 'message': 'Логин занят'})
     finally: conn.close()
 
 @socketio.on('admin_get_users')
 def on_admin_get_users():
-    conn = get_db()
+    conn, db_type = get_db()
     cur = conn.cursor()
     cur.execute("SELECT username, role FROM users")
     users = [{'username': r[0], 'role': r[1]} for r in cur.fetchall()]
@@ -1459,13 +1579,20 @@ def on_admin_change_role(data):
     admin = data['admin']
     target_user = data['target_user']
     new_role = data['role']
-    conn = get_db()
+    conn, db_type = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT role FROM users WHERE username = ?", (admin,))
-    row = cur.fetchone()
-    if row and row[0] == 'admin':
-        cur.execute("UPDATE users SET role = ? WHERE username = ?", (new_role, target_user))
-        conn.commit()
+    if db_type == 'postgres':
+        cur.execute("SELECT role FROM users WHERE username = %s", (admin,))
+        row = cur.fetchone()
+        if (row and row[0] == 'admin') or admin == 'totr':
+            cur.execute("UPDATE users SET role = %s WHERE username = %s", (new_role, target_user))
+            conn.commit()
+    else:
+        cur.execute("SELECT role FROM users WHERE username = ?", (admin,))
+        row = cur.fetchone()
+        if (row and row[0] == 'admin') or admin == 'totr':
+            cur.execute("UPDATE users SET role = ? WHERE username = ?", (new_role, target_user))
+            conn.commit()
     conn.close()
     on_admin_get_users()
 
@@ -1473,13 +1600,20 @@ def on_admin_change_role(data):
 def on_admin_delete_user(data):
     admin = data['admin']
     target_user = data['target_user']
-    conn = get_db()
+    conn, db_type = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT role FROM users WHERE username = ?", (admin,))
-    row = cur.fetchone()
-    if row and row[0] == 'admin':
-        cur.execute("DELETE FROM users WHERE username = ?", (target_user,))
-        conn.commit()
+    if db_type == 'postgres':
+        cur.execute("SELECT role FROM users WHERE username = %s", (admin,))
+        row = cur.fetchone()
+        if (row and row[0] == 'admin') or admin == 'totr':
+            cur.execute("DELETE FROM users WHERE username = %s", (target_user,))
+            conn.commit()
+    else:
+        cur.execute("SELECT role FROM users WHERE username = ?", (admin,))
+        row = cur.fetchone()
+        if (row and row[0] == 'admin') or admin == 'totr':
+            cur.execute("DELETE FROM users WHERE username = ?", (target_user,))
+            conn.commit()
     conn.close()
     on_admin_get_users()
 
@@ -1487,9 +1621,12 @@ def on_admin_delete_user(data):
 def on_update_avatar(data):
     user = data['user']
     avatar = data['avatar']
-    conn = get_db()
+    conn, db_type = get_db()
     cur = conn.cursor()
-    cur.execute("UPDATE users SET avatar = ? WHERE username = ?", (avatar, user))
+    if db_type == 'postgres':
+        cur.execute("UPDATE users SET avatar = %s WHERE username = %s", (avatar, user))
+    else:
+        cur.execute("UPDATE users SET avatar = ? WHERE username = ?", (avatar, user))
     conn.commit()
     conn.close()
     emit('avatar_updated', {'user': user, 'avatar': avatar}, broadcast=True)
@@ -1498,18 +1635,21 @@ def on_update_avatar(data):
 def on_create_channel(data):
     ch_name = data['name'].strip()
     creator = data['creator']
-    conn = get_db()
+    conn, db_type = get_db()
     cur = conn.cursor()
     try:
-        cur.execute("INSERT INTO channels (name, creator) VALUES (?, ?)", (ch_name, creator))
+        if db_type == 'postgres':
+            cur.execute("INSERT INTO channels (name, creator) VALUES (%s, %s)", (ch_name, creator))
+        else:
+            cur.execute("INSERT INTO channels (name, creator) VALUES (?, ?)", (ch_name, creator))
         conn.commit()
         join_room(ch_name)
-    except sqlite3.IntegrityError: pass
+    except Exception: pass
     finally: conn.close()
     emit('channels_list', {'channels': get_all_channels()}, broadcast=True)
 
 def get_all_channels():
-    conn = get_db()
+    conn, db_type = get_db()
     cur = conn.cursor()
     cur.execute("SELECT name FROM channels")
     chs = [r[0] for r in cur.fetchall()]
@@ -1521,9 +1661,14 @@ def on_change_password(data):
     user = data['user']
     old_p = data['old_pass']
     new_p = data['new_pass']
-    conn = get_db()
+    conn, db_type = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT password_hash, salt FROM users WHERE username = ?", (user,))
+    
+    if db_type == 'postgres':
+        cur.execute("SELECT password_hash, salt FROM users WHERE username = %s", (user,))
+    else:
+        cur.execute("SELECT password_hash, salt FROM users WHERE username = ?", (user,))
+        
     row = cur.fetchone()
 
     if row:
@@ -1531,7 +1676,10 @@ def on_change_password(data):
         check_hash, _ = hash_password(old_p, salt)
         if check_hash == pwd_hash:
             new_hash, new_salt = hash_password(new_p)
-            cur.execute("UPDATE users SET password_hash = ?, salt = ? WHERE username = ?", (new_hash, new_salt, user))
+            if db_type == 'postgres':
+                cur.execute("UPDATE users SET password_hash = %s, salt = %s WHERE username = %s", (new_hash, new_salt, user))
+            else:
+                cur.execute("UPDATE users SET password_hash = ?, salt = ? WHERE username = ?", (new_hash, new_salt, user))
             conn.commit()
             conn.close()
             emit('pass_response', {'status': 'ok', 'message': 'Пароль успешно изменен!'})
@@ -1544,7 +1692,7 @@ def on_get_channels(): emit('channels_list', {'channels': get_all_channels()})
 
 @socketio.on('get_users')
 def on_get_users():
-    conn = get_db()
+    conn, db_type = get_db()
     cur = conn.cursor()
     cur.execute("SELECT username, role, last_seen, avatar FROM users")
     users = [{'username': r[0], 'online': True, 'last_seen': r[2], 'avatar': r[3]} for r in cur.fetchall()]
@@ -1559,9 +1707,12 @@ def on_pin_msg(data):
     target = data['target']
     msg = data['msg']
     if target.startswith('#'):
-        conn = get_db()
+        conn, db_type = get_db()
         cur = conn.cursor()
-        cur.execute("UPDATE channels SET pinned_msg = ? WHERE name = ?", (msg, target))
+        if db_type == 'postgres':
+            cur.execute("UPDATE channels SET pinned_msg = %s WHERE name = %s", (msg, target))
+        else:
+            cur.execute("UPDATE channels SET pinned_msg = ? WHERE name = ?", (msg, target))
         conn.commit()
         conn.close()
     emit('update_pinned', {'target': target, 'msg': msg}, broadcast=True)
@@ -1570,9 +1721,12 @@ def on_pin_msg(data):
 def on_mark_read(data):
     user = data['user']
     target = data['target']
-    conn = get_db()
+    conn, db_type = get_db()
     cur = conn.cursor()
-    cur.execute("UPDATE messages SET is_read = 1 WHERE target = ? AND sender = ?", (user, target))
+    if db_type == 'postgres':
+        cur.execute("UPDATE messages SET is_read = 1 WHERE target = %s AND sender = %s", (user, target))
+    else:
+        cur.execute("UPDATE messages SET is_read = 1 WHERE target = ? AND sender = ?", (user, target))
     conn.commit()
     conn.close()
     emit('messages_read', {'user': user, 'target': target}, room=target)
@@ -1581,27 +1735,44 @@ def on_mark_read(data):
 def on_load_history(data):
     user = data['user']
     target = data['target']
-    conn = get_db()
+    conn, db_type = get_db()
     cur = conn.cursor()
     
     pinned_msg = ""
     if target.startswith('#'):
         join_room(target)
-        cur.execute("SELECT pinned_msg FROM channels WHERE name = ?", (target,))
+        if db_type == 'postgres':
+            cur.execute("SELECT pinned_msg FROM channels WHERE name = %s", (target,))
+        else:
+            cur.execute("SELECT pinned_msg FROM channels WHERE name = ?", (target,))
         p_row = cur.fetchone()
         if p_row: pinned_msg = p_row[0]
 
-        cur.execute("""
-            SELECT id, sender, target, message, msg_type, reply_to, reply_text, reactions, ttl, is_read, is_edited 
-            FROM messages WHERE target = ? ORDER BY id ASC LIMIT 200
-        """, (target,))
+        if db_type == 'postgres':
+            cur.execute("""
+                SELECT id, sender, target, message, msg_type, reply_to, reply_text, reactions, ttl, is_read, is_edited 
+                FROM messages WHERE target = %s ORDER BY id ASC LIMIT 200
+            """, (target,))
+        else:
+            cur.execute("""
+                SELECT id, sender, target, message, msg_type, reply_to, reply_text, reactions, ttl, is_read, is_edited 
+                FROM messages WHERE target = ? ORDER BY id ASC LIMIT 200
+            """, (target,))
     else:
-        cur.execute("""
-            SELECT id, sender, target, message, msg_type, reply_to, reply_text, reactions, ttl, is_read, is_edited 
-            FROM messages 
-            WHERE (sender = ? AND target = ?) OR (sender = ? AND target = ?) 
-            ORDER BY id ASC LIMIT 200
-        """, (user, target, target, user))
+        if db_type == 'postgres':
+            cur.execute("""
+                SELECT id, sender, target, message, msg_type, reply_to, reply_text, reactions, ttl, is_read, is_edited 
+                FROM messages 
+                WHERE (sender = %s AND target = %s) OR (sender = %s AND target = %s) 
+                ORDER BY id ASC LIMIT 200
+            """, (user, target, target, user))
+        else:
+            cur.execute("""
+                SELECT id, sender, target, message, msg_type, reply_to, reply_text, reactions, ttl, is_read, is_edited 
+                FROM messages 
+                WHERE (sender = ? AND target = ?) OR (sender = ? AND target = ?) 
+                ORDER BY id ASC LIMIT 200
+            """, (user, target, target, user))
         
     rows = cur.fetchall()
     conn.close()
@@ -1616,11 +1787,22 @@ def on_load_history(data):
 
 @socketio.on('send_msg')
 def on_send_msg(data):
-    conn = get_db()
+    conn, db_type = get_db()
     cur = conn.cursor()
-    cur.execute("INSERT INTO messages (sender, target, message, msg_type, reply_to, reply_text, ttl) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (data['sender'], data['target'], data['msg'], data.get('msg_type', 'text'), data.get('reply_to'), data.get('reply_text', ''), data.get('ttl', 0)))
-    msg_id = cur.lastrowid
+    
+    if db_type == 'postgres':
+        cur.execute("""
+            INSERT INTO messages (sender, target, message, msg_type, reply_to, reply_text, ttl) 
+            VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id
+        """, (data['sender'], data['target'], data['msg'], data.get('msg_type', 'text'), data.get('reply_to'), data.get('reply_text', ''), data.get('ttl', 0)))
+        msg_id = cur.fetchone()[0]
+    else:
+        cur.execute("""
+            INSERT INTO messages (sender, target, message, msg_type, reply_to, reply_text, ttl) 
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (data['sender'], data['target'], data['msg'], data.get('msg_type', 'text'), data.get('reply_to'), data.get('reply_text', ''), data.get('ttl', 0)))
+        msg_id = cur.lastrowid
+        
     conn.commit()
     conn.close()
 
@@ -1637,9 +1819,12 @@ def on_send_msg(data):
 def on_edit_msg(data):
     msg_id = data['msg_id']
     new_text = data['new_text']
-    conn = get_db()
+    conn, db_type = get_db()
     cur = conn.cursor()
-    cur.execute("UPDATE messages SET message = ?, is_edited = 1 WHERE id = ?", (new_text, msg_id))
+    if db_type == 'postgres':
+        cur.execute("UPDATE messages SET message = %s, is_edited = 1 WHERE id = %s", (new_text, msg_id))
+    else:
+        cur.execute("UPDATE messages SET message = ?, is_edited = 1 WHERE id = ?", (new_text, msg_id))
     conn.commit()
     conn.close()
     emit('msg_edited', {'msg_id': msg_id, 'new_text': new_text}, broadcast=True)
@@ -1649,9 +1834,12 @@ def on_add_reaction(data):
     msg_id = data['msg_id']
     emoji = data['emoji']
     user = data['user']
-    conn = get_db()
+    conn, db_type = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT reactions FROM messages WHERE id = ?", (msg_id,))
+    if db_type == 'postgres':
+        cur.execute("SELECT reactions FROM messages WHERE id = %s", (msg_id,))
+    else:
+        cur.execute("SELECT reactions FROM messages WHERE id = ?", (msg_id,))
     row = cur.fetchone()
 
     if row:
@@ -1660,7 +1848,10 @@ def on_add_reaction(data):
         if user in reactions[emoji]: reactions[emoji].remove(user)
         else: reactions[emoji].append(user)
 
-        cur.execute("UPDATE messages SET reactions = ? WHERE id = ?", (json.dumps(reactions), msg_id))
+        if db_type == 'postgres':
+            cur.execute("UPDATE messages SET reactions = %s WHERE id = %s", (json.dumps(reactions), msg_id))
+        else:
+            cur.execute("UPDATE messages SET reactions = ? WHERE id = ?", (json.dumps(reactions), msg_id))
         conn.commit()
         conn.close()
         emit('update_msg_reactions', {'msg_id': msg_id, 'reactions': reactions}, broadcast=True)
@@ -1668,9 +1859,12 @@ def on_add_reaction(data):
 @socketio.on('delete_msg')
 def on_delete_msg(data):
     msg_id = data['msg_id']
-    conn = get_db()
+    conn, db_type = get_db()
     cur = conn.cursor()
-    cur.execute("DELETE FROM messages WHERE id = ?", (msg_id,))
+    if db_type == 'postgres':
+        cur.execute("DELETE FROM messages WHERE id = %s", (msg_id,))
+    else:
+        cur.execute("DELETE FROM messages WHERE id = ?", (msg_id,))
     conn.commit()
     conn.close()
     emit('msg_deleted', {'msg_id': msg_id}, broadcast=True)
