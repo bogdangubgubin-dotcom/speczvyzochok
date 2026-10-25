@@ -254,25 +254,25 @@ HTML_TEMPLATE = """
         .online { background: #4caf50; } .offline { background: #757575; }
 
         #chat-main { flex: 1; display: flex; flex-direction: column; background: var(--bg-color); min-width: 0; height: 100dvh; position: relative; }
-        header { height: 56px; background: var(--panel-bg); padding: 0 15px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--panel-border); flex-shrink: 0; width: 100%; }
-        .header-left { display: flex; align-items: center; gap: 10px; }
+        header { height: 56px; background: var(--panel-bg); padding: 0 12px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--panel-border); flex-shrink: 0; width: 100%; }
+        .header-left { display: flex; align-items: center; gap: 8px; }
         .toggle-btn { width: 36px; height: 36px; background: var(--item-hover); border: 1px solid var(--panel-border); font-size: 18px; border-radius: 8px; color: var(--text-color); cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
 
-        #pinned-bar { display: none; background: var(--item-hover); padding: 6px 15px; border-bottom: 1px solid var(--panel-border); font-size: 13px; color: #3B8ED0; display: flex; justify-content: space-between; align-items: center; }
+        #pinned-bar { display: none; background: var(--item-hover); padding: 6px 15px; border-bottom: 1px solid var(--panel-border); font-size: 13px; color: #3B8ED0; justify-content: space-between; align-items: center; }
 
         .search-bar { padding: 6px 12px; background: var(--panel-bg); border-bottom: 1px solid var(--panel-border); display: flex; gap: 8px; }
         .search-bar input { margin: 0; padding: 6px 10px; font-size: 13px; height: 32px; border-radius: 6px; width: 100%; }
 
-        .chat-container { flex: 1; overflow-y: auto; padding: 25px 15px 85px 15px; display: flex; flex-direction: column; gap: 14px; -webkit-overflow-scrolling: touch; }
+        .chat-container { flex: 1; overflow-y: auto; padding: 15px 12px 75px 12px; display: flex; flex-direction: column; gap: 10px; -webkit-overflow-scrolling: touch; }
         
-        .message { max-width: 80%; padding: 10px 14px; border-radius: 14px; font-size: 15px; position: relative; display: flex; flex-direction: column; gap: 4px; word-wrap: break-word; user-select: text; margin-top: 5px; }
+        .message { max-width: 85%; padding: 8px 12px; border-radius: 12px; font-size: 14px; position: relative; display: flex; flex-direction: column; gap: 3px; word-wrap: break-word; user-select: text; margin-top: 4px; }
         .msg-me { background: var(--accent-color); color: #fff; align-self: flex-end; border-bottom-right-radius: 2px; }
         .msg-other { background: var(--panel-bg); border: 1px solid var(--panel-border); align-self: flex-start; border-bottom-left-radius: 2px; }
         .msg-header { display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: bold; color: #82b1ff; }
         .msg-me .msg-header { justify-content: flex-end; color: #e0e0e0; }
         .msg-avatar { width: 18px; height: 18px; border-radius: 50%; background-size: cover; background-position: center; display: inline-block; cursor: pointer; }
 
-        .video-note { width: 220px; height: 220px; border-radius: 16px; object-fit: cover; border: 2px solid var(--panel-border); background: #000; }
+        .video-note { width: 160px; height: 160px; border-radius: 12px; object-fit: cover; border: 2px solid var(--panel-border); background: #000; }
 
         .msg-status { font-size: 10px; align-self: flex-end; margin-top: 2px; opacity: 0.8; }
         .msg-me .msg-status { color: #bbdefb; }
@@ -288,12 +288,13 @@ HTML_TEMPLATE = """
 
         .reply-preview-box { background: rgba(0,0,0,0.2); border-left: 3px solid #3B8ED0; padding: 4px 8px; border-radius: 4px; font-size: 12px; color: #aaa; margin-bottom: 4px; }
         
-        #reply-bar { display: none; background: var(--panel-bg); padding: 6px 12px; border-top: 1px solid var(--panel-border); justify-content: space-between; align-items: center; font-size: 13px; color: #3B8ED0; }
+        #reply-bar { display: none; background: var(--panel-bg); padding: 4px 10px; border-top: 1px solid var(--panel-border); justify-content: space-between; align-items: center; font-size: 12px; color: #3B8ED0; }
         
-        footer { position: absolute; bottom: 0; left: 0; right: 0; height: 60px; background: var(--panel-bg); padding: 8px 10px; display: flex; gap: 6px; border-top: 1px solid var(--panel-border); align-items: center; z-index: 99; }
-        footer input[type="text"] { flex: 1; height: 42px; background: var(--bg-color); color: var(--text-color); border: 1px solid var(--panel-border); border-radius: 10px; padding: 0 12px; font-size: 16px; outline: none; }
-        footer button { width: auto; padding: 0 14px; height: 42px; margin: 0; }
-        .icon-btn { background: var(--item-hover); border: 1px solid var(--panel-border); border-radius: 10px; padding: 0 10px; height: 42px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--text-color); flex-shrink: 0; font-size: 16px; }
+        /* КОМПАКТНАЯ НИЖНЯЯ ПАНЕЛЬ ДЛЯ ТЕЛЕФОНОВ */
+        footer { position: absolute; bottom: 0; left: 0; right: 0; min-height: 54px; background: var(--panel-bg); padding: 6px 8px; display: flex; gap: 4px; border-top: 1px solid var(--panel-border); align-items: center; z-index: 99; }
+        footer input[type="text"] { flex: 1; height: 38px; background: var(--bg-color); color: var(--text-color); border: 1px solid var(--panel-border); border-radius: 10px; padding: 0 10px; font-size: 15px; outline: none; min-width: 0; }
+        footer button#send-btn { width: 38px; height: 38px; border-radius: 10px; padding: 0; flex-shrink: 0; font-size: 16px; display: flex; align-items: center; justify-content: center; }
+        .icon-btn { background: var(--item-hover); border: 1px solid var(--panel-border); border-radius: 8px; width: 34px; height: 38px; padding: 0; display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--text-color); flex-shrink: 0; font-size: 14px; }
         .recording { background: #c62828 !important; color: #fff !important; }
 
         .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100dvh; background: rgba(0,0,0,0.85); z-index: 1000; justify-content: center; align-items: center; padding: 15px; }
@@ -316,12 +317,12 @@ HTML_TEMPLATE = """
         .audio-meter-bar { height: 100%; width: 0%; background: #4caf50; transition: width 0.04s ease; }
 
         .logout-btn { background: transparent; border: 1px solid #555; color: #aaa; padding: 4px 8px; font-size: 12px; border-radius: 6px; cursor: pointer; width: auto; flex-shrink: 0; margin: 0; }
-        .admin-nav-btn { background: #d32f2f; color: #fff; padding: 6px 10px; font-size: 12px; border-radius: 6px; border: none; font-weight: bold; cursor: pointer; display: none; }
+        .admin-nav-btn { background: #d32f2f; color: #fff; padding: 5px 8px; font-size: 11px; border-radius: 6px; border: none; font-weight: bold; cursor: pointer; display: none; }
 
         .avatar-upload-box { display: flex; flex-direction: column; align-items: center; gap: 10px; margin-bottom: 10px; }
         .big-avatar { width: 70px; height: 70px; border-radius: 50%; background: #3B8ED0; display: flex; align-items: center; justify-content: center; font-size: 28px; font-weight: bold; color: #fff; background-size: cover; background-position: center; border: 2px solid #555; }
 
-        #emoji-picker { display: none; position: absolute; bottom: 65px; right: 10px; background: var(--panel-bg); border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px; grid-template-columns: repeat(5, 1fr); gap: 8px; z-index: 100; font-size: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
+        #emoji-picker { display: none; position: absolute; bottom: 60px; right: 10px; background: var(--panel-bg); border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px; grid-template-columns: repeat(5, 1fr); gap: 8px; z-index: 100; font-size: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
         #emoji-picker span { cursor: pointer; text-align: center; }
         #emoji-picker span:hover { transform: scale(1.3); }
 
@@ -337,6 +338,7 @@ HTML_TEMPLATE = """
             #sidebar { position: fixed; left: 0; top: 0; bottom: 0; width: 80%; max-width: 280px; transform: translateX(-100%); }
             #sidebar.open { transform: translateX(0); }
             .poker-table { grid-template-columns: repeat(2, 1fr); border-radius: 30px; }
+            .video-note { width: 130px; height: 130px; }
         }
     </style>
 </head>
@@ -376,18 +378,18 @@ HTML_TEMPLATE = """
         </div>
 
         <div id="chat-main" onclick="closeSidebar()">
-            header>
+            <header>
                 <div class="header-left">
                     <button class="toggle-btn" onclick="event.stopPropagation(); toggleSidebar();">☰</button>
                     <div class="header-title-box">
-                        <h3 id="chat-title">#general</h3>
+                        <h3 id="chat-title" style="font-size:15px;">#general</h3>
                         <div id="typing-indicator" style="font-size:11px; color:#3B8ED0; height:13px;"></div>
                     </div>
                 </div>
-                <div style="display:flex; align-items:center; gap:8px;">
-                    <button class="icon-btn" style="height:32px; padding:0 8px; font-size:13px;" onclick="openGalleryModal()">🖼️ Медиа</button>
+                <div style="display:flex; align-items:center; gap:6px;">
+                    <button class="icon-btn" style="height:32px; width:auto; padding:0 8px; font-size:12px;" onclick="openGalleryModal()">🖼️ Медиа</button>
                     <button id="admin-btn" class="admin-nav-btn" onclick="openAdminModal()">⚙️ Админка</button>
-                    <span style="font-size:11px; color:#4caf50;">🔒 E2EE</span>
+                    <span style="font-size:10px; color:#4caf50;">🔒 E2EE</span>
                 </div>
             </header>
 
@@ -419,10 +421,10 @@ HTML_TEMPLATE = """
                     📎
                     <input type="file" id="file-input" style="display:none;" onchange="sendFile()">
                 </label>
-                <button id="voice-record-btn" class="icon-btn" onclick="toggleVoiceRecord()" title="Голосовое сообщение">🎤</button>
-                <button id="video-record-btn" class="icon-btn" onclick="toggleVideoNoteRecord()" title="Квадратное видеосообщение">📹</button>
+                <button id="voice-record-btn" class="icon-btn" onclick="toggleVoiceRecord()" title="Голосовое">🎤</button>
+                <button id="video-record-btn" class="icon-btn" onclick="toggleVideoNoteRecord()" title="Видео-квадрат">📹</button>
                 <button class="icon-btn" onclick="toggleEmojiPicker()" title="Смайлики">😀</button>
-                <select id="ttl-select" class="icon-btn" style="padding:0 4px; font-size:12px;" title="Таймер уничтожения">
+                <select id="ttl-select" class="icon-btn" style="padding:0; font-size:11px;" title="Таймер">
                     <option value="0">Off</option>
                     <option value="10">10s</option>
                     <option value="60">1m</option>
@@ -669,6 +671,8 @@ HTML_TEMPLATE = """
 
                 if (userRole === 'admin') {
                     document.getElementById('admin-btn').style.display = 'inline-block';
+                } else {
+                    document.getElementById('admin-btn').style.display = 'none';
                 }
 
                 if (data.avatar) userAvatarsMap[currentUser] = data.avatar;
@@ -1026,6 +1030,7 @@ HTML_TEMPLATE = """
             }
         }
 
+        // КВАДРАТНОЕ ВИДЕОСООБЩЕНИЕ
         async function toggleVideoNoteRecord() {
             const btn = document.getElementById('video-record-btn');
             if (!isVideoRecording) {
@@ -1102,13 +1107,13 @@ HTML_TEMPLATE = """
                 try {
                     const fileData = JSON.parse(msg.msg);
                     if (fileData.name.match(/\.(jpg|jpeg|png|gif|webp)$/i)) {
-                        contentHtml = `<img src="data:image/jpeg;base64,${fileData.data}" style="max-width:200px; border-radius:8px; cursor:pointer;" onclick="openLightbox(this.src)">`;
+                        contentHtml = `<img src="data:image/jpeg;base64,${fileData.data}" style="max-width:180px; border-radius:8px; cursor:pointer;" onclick="openLightbox(this.src)">`;
                     } else {
                         contentHtml = `<a href="data:application/octet-stream;base64,${fileData.data}" download="${fileData.name}" style="color:#fff;">📁 ${fileData.name}</a>`;
                     }
                 } catch(e) {}
             } else if (msg.msg_type === 'voice') {
-                contentHtml = `<audio controls playsinline src="data:audio/webm;base64,${msg.msg}" style="height:32px; width:180px;"></audio>`;
+                contentHtml = `<audio controls playsinline src="data:audio/webm;base64,${msg.msg}" style="height:32px; width:170px;"></audio>`;
             } else if (msg.msg_type === 'video_note') {
                 contentHtml = `<video class="video-note" controls playsinline src="data:video/webm;base64,${msg.msg}"></video>`;
             }
