@@ -6,6 +6,7 @@ import json
 import random
 import psycopg2
 import psycopg2.extras
+import pyotp
 from flask import Flask, render_template_string, request
 from flask_socketio import SocketIO, emit, join_room, leave_room
 
@@ -40,6 +41,8 @@ def init_db():
                 salt TEXT NOT NULL,
                 role VARCHAR(50) DEFAULT 'user',
                 avatar TEXT DEFAULT '',
+                totp_secret VARCHAR(64) DEFAULT '',
+                is_2fa_enabled INT DEFAULT 0,
                 last_seen BIGINT DEFAULT 0
             );
         """)
@@ -48,6 +51,8 @@ def init_db():
                 id SERIAL PRIMARY KEY,
                 name VARCHAR(255) UNIQUE NOT NULL,
                 creator VARCHAR(255) NOT NULL,
+                is_private INT DEFAULT 0,
+                password TEXT DEFAULT '',
                 members TEXT DEFAULT '',
                 pinned_msg TEXT DEFAULT ''
             );
@@ -62,11 +67,21 @@ def init_db():
                 msg_type VARCHAR(50) DEFAULT 'text',
                 reply_to INT DEFAULT NULL,
                 reply_text TEXT DEFAULT '',
+                forward_from VARCHAR(255) DEFAULT '',
                 reactions TEXT DEFAULT '{}',
                 ttl INT DEFAULT 0,
                 is_read INT DEFAULT 0,
                 is_edited INT DEFAULT 0,
                 timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS user_sessions (
+                id SERIAL PRIMARY KEY,
+                username VARCHAR(255) NOT NULL,
+                session_token VARCHAR(255) NOT NULL,
+                device_info TEXT DEFAULT '',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
         """)
         cur.execute("UPDATE users SET role = 'admin' WHERE username = 'totr';")
@@ -79,10 +94,14 @@ def init_db():
                 salt TEXT NOT NULL,
                 role TEXT DEFAULT 'user',
                 avatar TEXT DEFAULT '',
+                totp_secret TEXT DEFAULT '',
+                is_2fa_enabled INTEGER DEFAULT 0,
                 last_seen INTEGER DEFAULT 0
             )
         """)
-        try: cur.execute("ALTER TABLE users ADD COLUMN avatar TEXT DEFAULT ''")
+        try: cur.execute("ALTER TABLE users ADD COLUMN totp_secret TEXT DEFAULT ''")
+        except sqlite3.OperationalError: pass
+        try: cur.execute("ALTER TABLE users ADD COLUMN is_2fa_enabled INTEGER DEFAULT 0")
         except sqlite3.OperationalError: pass
 
         cur.execute("""
@@ -90,12 +109,16 @@ def init_db():
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT UNIQUE NOT NULL,
                 creator TEXT NOT NULL,
+                is_private INTEGER DEFAULT 0,
+                password TEXT DEFAULT '',
                 members TEXT DEFAULT '',
                 pinned_msg TEXT DEFAULT ''
             )
         """)
         cur.execute("INSERT OR IGNORE INTO channels (name, creator, members) VALUES ('#general', 'system', '')")
-        try: cur.execute("ALTER TABLE channels ADD COLUMN pinned_msg TEXT DEFAULT ''")
+        try: cur.execute("ALTER TABLE channels ADD COLUMN is_private INTEGER DEFAULT 0")
+        except sqlite3.OperationalError: pass
+        try: cur.execute("ALTER TABLE channels ADD COLUMN password TEXT DEFAULT ''")
         except sqlite3.OperationalError: pass
 
         cur.execute("""
@@ -107,6 +130,7 @@ def init_db():
                 msg_type TEXT DEFAULT 'text',
                 reply_to INTEGER DEFAULT NULL,
                 reply_text TEXT DEFAULT '',
+                forward_from TEXT DEFAULT '',
                 reactions TEXT DEFAULT '{}',
                 ttl INTEGER DEFAULT 0,
                 is_read INTEGER DEFAULT 0,
@@ -114,13 +138,18 @@ def init_db():
                 timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
             )
         """)
-        try: cur.execute("ALTER TABLE messages ADD COLUMN ttl INTEGER DEFAULT 0")
-        except sqlite3.OperationalError: pass
-        try: cur.execute("ALTER TABLE messages ADD COLUMN is_read INTEGER DEFAULT 0")
-        except sqlite3.OperationalError: pass
-        try: cur.execute("ALTER TABLE messages ADD COLUMN is_edited INTEGER DEFAULT 0")
+        try: cur.execute("ALTER TABLE messages ADD COLUMN forward_from TEXT DEFAULT ''")
         except sqlite3.OperationalError: pass
 
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS user_sessions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT NOT NULL,
+                session_token TEXT NOT NULL,
+                device_info TEXT DEFAULT '',
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
         cur.execute("UPDATE users SET role = 'admin' WHERE username = 'totr'")
 
     conn.commit()
@@ -334,10 +363,10 @@ HTML_TEMPLATE = """
         .reaction-item { background: rgba(0,0,0,0.2); border-radius: 10px; padding: 2px 6px; font-size: 11px; border: 1px solid var(--panel-border); cursor: pointer; }
 
         .reply-preview-box { background: rgba(0,0,0,0.2); border-left: 3px solid #3B8ED0; padding: 4px 8px; border-radius: 4px; font-size: 12px; color: #aaa; margin-bottom: 4px; }
+        .forward-preview-box { font-size: 11px; color: #ffb74d; font-style: italic; margin-bottom: 2px; }
         
         #reply-bar { display: none; background: var(--panel-bg); padding: 4px 10px; border-top: 1px solid var(--panel-border); justify-content: space-between; align-items: center; font-size: 12px; color: #3B8ED0; }
         
-        /* КРАСИВАЯ СТРOЧКА СООБЩЕНИЙ В ОДНУ ШИРИНКУ */
         footer { 
             position: absolute; 
             bottom: 0; 
@@ -452,6 +481,7 @@ HTML_TEMPLATE = """
             <h2>Спецзвязочок</h2>
             <input type="text" id="username" placeholder="Логин">
             <input type="password" id="password" placeholder="Пароль">
+            <input type="text" id="totp-code" placeholder="6-значный 2FA код (если вкл)" style="display:none;">
             <button onclick="login()">Войти</button>
             <button onclick="register()" style="background: transparent; border: 1px solid #1F6AA5;">Регистрация</button>
             <div id="status" style="margin-top:10px; font-size:13px; color:#ff5555;"></div>
@@ -472,7 +502,7 @@ HTML_TEMPLATE = """
             <div class="chat-list">
                 <div class="section-title">
                     <span>Каналы</span>
-                    <button onclick="createChannelPrompt()" style="width:auto; padding:0 6px; height:20px; font-size:12px;">+</button>
+                    <button onclick="openCreateChannelModal()" style="width:auto; padding:0 6px; height:20px; font-size:12px;">+</button>
                 </div>
                 <div id="channels-list"></div>
                 <div class="section-title">Личные чаты</div>
@@ -485,11 +515,12 @@ HTML_TEMPLATE = """
                 <div class="header-left">
                     <button class="toggle-btn" onclick="event.stopPropagation(); toggleSidebar();">☰</button>
                     <div class="header-title-box">
-                        <h3 id="chat-title" style="font-size:15px;">#general</h3>
+                        <h3 id="chat-title" style="font-size:15px; cursor:pointer;" onclick="openMembersModal()">#general</h3>
                         <div id="typing-indicator" style="font-size:11px; color:#3B8ED0; height:13px;"></div>
                     </div>
                 </div>
                 <div style="display:flex; align-items:center; gap:6px;">
+                    <button class="icon-btn" style="height:32px; width:auto; padding:0 8px; font-size:12px;" onclick="openMembersModal()">👥 Состав</button>
                     <button class="icon-btn" style="height:32px; width:auto; padding:0 8px; font-size:12px;" onclick="openGalleryModal()">🖼️ Медиа</button>
                     <button id="admin-btn" class="admin-nav-btn" onclick="openAdminModal()">⚙️ Админка</button>
                     <span style="font-size:10px; color:#4caf50;">🔒 E2EE</span>
@@ -544,6 +575,52 @@ HTML_TEMPLATE = """
         </div>
     </div>
 
+    <!-- МОДАЛЬНОЕ ОКНО СОЗДАНИЯ КАНАЛА -->
+    <div id="create-channel-modal" class="modal-overlay">
+        <div class="modal-box">
+            <div class="modal-header">
+                <h3>📢 Создать канал</h3>
+                <button onclick="closeCreateChannelModal()" style="width:auto; padding:4px 10px; background:#444;">✕</button>
+            </div>
+            <div class="modal-body">
+                <input type="text" id="new-ch-name" placeholder="Название (начиная с #)">
+                <label style="display:flex; align-items:center; gap:8px; font-size:14px; margin-top:6px;">
+                    <input type="checkbox" id="new-ch-private" onchange="document.getElementById('new-ch-pass').style.display = this.checked ? 'block' : 'none'">
+                    Приватный канал (доступ по паролю)
+                </label>
+                <input type="password" id="new-ch-pass" placeholder="Придумайте пароль канала" style="display:none;">
+                <button onclick="submitCreateChannel()" style="background:#2e7d32;">Создать канал</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- МОДАЛЬНОЕ ОКНО УЧАСТНИКОВ КАНАЛА -->
+    <div id="members-modal" class="modal-overlay">
+        <div class="modal-box">
+            <div class="modal-header">
+                <h3 id="members-modal-title">👥 Участники</h3>
+                <button onclick="closeMembersModal()" style="width:auto; padding:4px 10px; background:#444;">✕</button>
+            </div>
+            <div class="modal-body">
+                <div id="members-container" style="display:flex; flex-direction:column; gap:8px;"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- МОДАЛЬНОЕ ОКНО ПЕРЕСЫЛКИ СООБЩЕНИЯ -->
+    <div id="forward-modal" class="modal-overlay">
+        <div class="modal-box">
+            <div class="modal-header">
+                <h3>➡️ Переслать сообщение</h3>
+                <button onclick="closeForwardModal()" style="width:auto; padding:4px 10px; background:#444;">✕</button>
+            </div>
+            <div class="modal-body">
+                <p style="font-size:13px; color:#aaa;">Выберите чат для пересылки:</p>
+                <div id="forward-chats-list" style="display:flex; flex-direction:column; gap:8px;"></div>
+            </div>
+        </div>
+    </div>
+
     <!-- МЕДИА-ГАЛЕРЕЯ ЧАТА -->
     <div id="gallery-modal" class="modal-overlay">
         <div class="modal-box">
@@ -590,8 +667,13 @@ HTML_TEMPLATE = """
                 </div>
 
                 <button onclick="toggleTheme()" style="background:#444; margin-bottom:5px;">🌗 Сменить тему оформления</button>
-                <button onclick="openMafiaModal()" style="background:#8e24aa; margin-bottom:10px; padding:12px;">🕵️ Игра «Мафия»</button>
-                
+                <button onclick="openMafiaModal()" style="background:#8e24aa; margin-bottom:5px; padding:12px;">🕵️ Игра «Мафия»</button>
+                <button onclick="requestPushPermission()" style="background:#1F6AA5; margin-bottom:10px;">🔔 Включить Push-уведомления</button>
+
+                <hr style="border:0; border-top:1px solid var(--panel-border); margin:10px 0;">
+                <h4 style="font-size:14px; color:#3B8ED0;">🔒 Двухфакторная аутентификация (2FA)</h4>
+                <button id="2fa-toggle-btn" onclick="setup2FA()" style="background:#2e7d32; margin-top:5px;">Настроить Google Authenticator</button>
+
                 <hr style="border:0; border-top:1px solid var(--panel-border); margin:10px 0;">
                 <h4 style="font-size:14px; color:#aaa;">Смена пароля</h4>
                 <input type="password" id="old-pass" placeholder="Старый пароль">
@@ -668,6 +750,7 @@ HTML_TEMPLATE = """
         let showRoleFlag = false;
         let mySecretRole = null;
         let editingMsgId = null;
+        let forwardingMsgId = null;
         
         let isMicOn = false;
         let mediaStream = null;
@@ -692,13 +775,18 @@ HTML_TEMPLATE = """
         const iceServers = { 
             iceServers: [
                 { urls: 'stun:stun.l.google.com:19302' },
-                { urls: 'stun:stun1.l.google.com:19302' },
-                { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
-                { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' }
+                { urls: 'stun:stun1.l.google.com:19302' }
             ] 
         };
 
-        if ("Notification" in window && Notification.permission === "default") Notification.requestPermission();
+        function requestPushPermission() {
+            if ("Notification" in window) {
+                Notification.requestPermission().then(permission => {
+                    if (permission === "granted") alert("Push-уведомления успешно включены!");
+                    else alert("Разрешение на уведомления отклонено.");
+                });
+            }
+        }
 
         function playNotificationSound() {
             try {
@@ -757,7 +845,8 @@ HTML_TEMPLATE = """
         function login() {
             const u = document.getElementById('username').value.trim();
             const p = document.getElementById('password').value.trim();
-            if (u && p) socket.emit('login', { username: u, password: p });
+            const code = document.getElementById('totp-code').value.trim();
+            if (u && p) socket.emit('login', { username: u, password: p, code: code });
         }
 
         function register() {
@@ -791,17 +880,65 @@ HTML_TEMPLATE = """
                 socket.emit('get_channels');
                 socket.emit('get_users');
                 switchChat('#general');
+            } else if (data.status === 'need_2fa') {
+                document.getElementById('totp-code').style.display = 'block';
+                document.getElementById('status').innerText = 'Введите 6-значный код 2FA из приложения';
             } else {
                 document.getElementById('status').innerText = data.message;
             }
         });
 
-        function createChannelPrompt() {
-            const chName = prompt("Введите название нового канала (начиная с #):");
-            if (chName && chName.startsWith('#')) {
-                socket.emit('create_channel', { name: chName, creator: currentUser });
-            } else if (chName) alert("Название должно начинаться с символа #");
+        function openCreateChannelModal() { document.getElementById('create-channel-modal').style.display = 'flex'; }
+        function closeCreateChannelModal() { document.getElementById('create-channel-modal').style.display = 'none'; }
+
+        function submitCreateChannel() {
+            const name = document.getElementById('new-ch-name').value.trim();
+            const isPrivate = document.getElementById('new-ch-private').checked;
+            const password = document.getElementById('new-ch-pass').value.trim();
+
+            if (name && name.startsWith('#')) {
+                socket.emit('create_channel', { name: name, creator: currentUser, is_private: isPrivate ? 1 : 0, password: password });
+                closeCreateChannelModal();
+            } else alert("Название должно начинаться с символа #");
         }
+
+        function openMembersModal() {
+            document.getElementById('members-modal-title').innerText = '👥 Участники: ' + currentTarget;
+            document.getElementById('members-modal').style.display = 'flex';
+            socket.emit('get_channel_members', { channel: currentTarget });
+        }
+        function closeMembersModal() { document.getElementById('members-modal').style.display = 'none'; }
+
+        socket.on('channel_members_list', (data) => {
+            const container = document.getElementById('members-container');
+            container.innerHTML = '';
+            data.members.forEach(m => {
+                const item = document.createElement('div');
+                item.className = 'admin-user-row';
+                item.innerHTML = `
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <span class="status-dot ${m.online ? 'online' : 'offline'}"></span>
+                        <b>${m.username}</b>
+                    </div>
+                    <button onclick="closeMembersModal(); switchChat('${m.username}');" style="width:auto; padding:4px 8px; font-size:11px; background:#1F6AA5;">Написать</button>
+                `;
+                container.appendChild(item);
+            });
+        });
+
+        function setup2FA() {
+            socket.emit('setup_2fa', { user: currentUser });
+        }
+
+        socket.on('2fa_setup_response', (data) => {
+            const secret = data.secret;
+            const code = prompt(`Ваш секретный ключ 2FA: ${secret}\nВведите этот ключ в Google Authenticator и введите полученный 6-значный код для подтверждения:`);
+            if (code) socket.emit('verify_enable_2fa', { user: currentUser, code: code, secret: secret });
+        });
+
+        socket.on('2fa_enabled_status', (data) => {
+            alert(data.message);
+        });
 
         function uploadAvatar() {
             const file = document.getElementById('avatar-input').files[0];
@@ -889,20 +1026,31 @@ HTML_TEMPLATE = """
         socket.on('channels_list', (data) => {
             const list = document.getElementById('channels-list');
             list.innerHTML = '';
-            const sorted = [...data.channels].sort((a,b) => pinnedChats.includes(b) - pinnedChats.includes(a));
+            const sorted = [...data.channels].sort((a,b) => pinnedChats.includes(b.name) - pinnedChats.includes(a.name));
             sorted.forEach(ch => {
-                const isPinned = pinnedChats.includes(ch);
-                const unread = unreadCounts[ch] || 0;
+                const isPinned = pinnedChats.includes(ch.name);
+                const unread = unreadCounts[ch.name] || 0;
+                const privBadge = ch.is_private ? '🔒 ' : '';
                 const div = document.createElement('div');
-                div.className = 'chat-item' + (ch === currentTarget ? ' active' : '') + (isPinned ? ' pinned-chat' : '');
+                div.className = 'chat-item' + (ch.name === currentTarget ? ' active' : '') + (isPinned ? ' pinned-chat' : '');
                 div.innerHTML = `
-                    <span>${ch}</span>
+                    <span>${privBadge}${ch.name}</span>
                     ${unread > 0 ? `<span class="unread-badge">${unread}</span>` : ''}
-                    <button onclick="event.stopPropagation(); togglePinChat('${ch}')" style="width:auto; background:transparent; padding:0; border:none; font-size:12px; margin-left:4px;">📌</button>
+                    <button onclick="event.stopPropagation(); togglePinChat('${ch.name}')" style="width:auto; background:transparent; padding:0; border:none; font-size:12px; margin-left:4px;">📌</button>
                 `;
-                div.onclick = () => switchChat(ch);
+                div.onclick = () => {
+                    if (ch.is_private) {
+                        const pass = prompt("Внимание! Это закрытый канал. Введите пароль:");
+                        if (pass) socket.emit('verify_channel_pass', { name: ch.name, password: pass });
+                    } else switchChat(ch.name);
+                };
                 list.appendChild(div);
             });
+        });
+
+        socket.on('channel_pass_result', (data) => {
+            if (data.status === 'ok') switchChat(data.name);
+            else alert("Неверный пароль к каналу!");
         });
 
         socket.on('users_list', (data) => {
@@ -973,6 +1121,36 @@ HTML_TEMPLATE = """
             document.getElementById('gallery-modal').style.display = 'flex';
         }
         function closeGalleryModal() { document.getElementById('gallery-modal').style.display = 'none'; }
+
+        /* --- ФУНКЦИОНАЛ ПЕРЕСЫЛКИ --- */
+        function openForwardModal(id) {
+            forwardingMsgId = id;
+            document.getElementById('forward-modal').style.display = 'flex';
+            socket.emit('get_forward_targets');
+        }
+        function closeForwardModal() { document.getElementById('forward-modal').style.display = 'none'; }
+
+        socket.on('forward_targets_list', (data) => {
+            const container = document.getElementById('forward-chats-list');
+            container.innerHTML = '';
+            data.targets.forEach(t => {
+                const row = document.createElement('div');
+                row.className = 'admin-user-row';
+                row.innerHTML = `<span>${t}</span><button onclick="submitForward('${t}')" style="width:auto; padding:4px 8px; background:#1F6AA5;">Переслать</button>`;
+                container.appendChild(row);
+            });
+        });
+
+        function submitForward(targetChat) {
+            const msg = allLoadedMessages[forwardingMsgId];
+            if (msg) {
+                socket.emit('send_msg', {
+                    sender: currentUser, target: targetChat, msg: msg.msg, msg_type: msg.msg_type,
+                    forward_from: msg.sender
+                });
+                closeForwardModal();
+            }
+        }
 
         /* --- ФУНКЦИОНАЛ АДМИНКИ --- */
         function openAdminModal() {
@@ -1209,6 +1387,7 @@ HTML_TEMPLATE = """
                 box.appendChild(div);
             }
 
+            let forwardHtml = msg.forward_from ? `<div class="forward-preview-box">↪ Переслано от ${msg.forward_from}</div>` : '';
             let replyHtml = msg.reply_text ? `<div class="reply-preview-box">${msg.reply_text}</div>` : '';
             let contentHtml = `<span>${msg.msg}</span>`;
             if (msg.msg_type === 'file') {
@@ -1246,12 +1425,14 @@ HTML_TEMPLATE = """
             div.innerHTML = `
                 <div class="msg-actions">
                     <button class="action-btn" onclick="setReplyMsg(${msg.id})">↩️</button>
+                    <button class="action-btn" onclick="openForwardModal(${msg.id})">➡️</button>
                     <button class="action-btn" onclick="pinMsg(${msg.id})">📌</button>
                     <button class="action-btn" onclick="addReaction(${msg.id}, '👍')">👍</button>
                     <button class="action-btn" onclick="addReaction(${msg.id}, '❤️')">❤️</button>
                     ${editBtn}
                     ${deleteBtn}
                 </div>
+                ${forwardHtml}
                 ${replyHtml}
                 <div class="msg-header">
                     <span class="msg-avatar" style="${msgAvStyle}" onclick="openUserInfoModal('${msg.sender}')"></span>
@@ -1520,30 +1701,140 @@ def index(): return render_template_string(HTML_TEMPLATE)
 def on_login(data):
     username = data.get('username', '').strip()
     password = data.get('password', '').strip()
+    code = data.get('code', '').strip()
     conn, db_type = get_db()
     cur = conn.cursor()
     
     if db_type == 'postgres':
-        cur.execute("SELECT password_hash, salt, role, avatar FROM users WHERE username = %s", (username,))
+        cur.execute("SELECT password_hash, salt, role, avatar, totp_secret, is_2fa_enabled FROM users WHERE username = %s", (username,))
     else:
-        cur.execute("SELECT password_hash, salt, role, avatar FROM users WHERE username = ?", (username,))
+        cur.execute("SELECT password_hash, salt, role, avatar, totp_secret, is_2fa_enabled FROM users WHERE username = ?", (username,))
         
     row = cur.fetchone()
 
     if row:
-        pwd_hash, salt, role, avatar = row
-        conn.close()
+        pwd_hash, salt, role, avatar, totp_secret, is_2fa = row
         check_hash, _ = hash_password(password, salt)
         if check_hash == pwd_hash:
-            if username == 'totr':
-                role = 'admin'
+            if is_2fa and is_2fa == 1:
+                if not code:
+                    conn.close()
+                    emit('auth_response', {'status': 'need_2fa'})
+                    return
+                totp = pyotp.TOTP(totp_secret)
+                if not totp.verify(code):
+                    conn.close()
+                    emit('auth_response', {'status': 'error', 'message': 'Неверный 2FA код!'})
+                    return
+
+            if username == 'totr': role = 'admin'
+
+            token = os.urandom(16).hex()
+            user_agent = request.headers.get('User-Agent', 'Desktop Browser')
+            if db_type == 'postgres':
+                cur.execute("INSERT INTO user_sessions (username, session_token, device_info) VALUES (%s, %s, %s)", (username, token, user_agent))
+            else:
+                cur.execute("INSERT INTO user_sessions (username, session_token, device_info) VALUES (?, ?, ?)", (username, token, user_agent))
+            conn.commit()
+            conn.close()
+
             join_room(username)
             join_room('#general')
-            emit('auth_response', {'status': 'ok', 'username': username, 'role': role, 'avatar': avatar})
-        else: emit('auth_response', {'status': 'error', 'message': 'Неверный пароль'})
+            emit('auth_response', {'status': 'ok', 'username': username, 'role': role, 'avatar': avatar, 'token': token})
+        else:
+            conn.close()
+            emit('auth_response', {'status': 'error', 'message': 'Неверный пароль'})
     else:
         conn.close()
         emit('auth_response', {'status': 'error', 'message': 'Пользователь не найден'})
+
+@socketio.on('setup_2fa')
+def on_setup_2fa(data):
+    user = data['user']
+    secret = pyotp.random_base32()
+    emit('2fa_setup_response', {'secret': secret})
+
+@socketio.on('verify_enable_2fa')
+def on_verify_enable_2fa(data):
+    user = data['user']
+    code = data['code']
+    secret = data['secret']
+    totp = pyotp.TOTP(secret)
+    if totp.verify(code):
+        conn, db_type = get_db()
+        cur = conn.cursor()
+        if db_type == 'postgres':
+            cur.execute("UPDATE users SET totp_secret = %s, is_2fa_enabled = 1 WHERE username = %s", (secret, user))
+        else:
+            cur.execute("UPDATE users SET totp_secret = ?, is_2fa_enabled = 1 WHERE username = ?", (secret, user))
+        conn.commit()
+        conn.close()
+        emit('2fa_enabled_status', {'status': 'ok', 'message': '2FA аутентификация успешно включена!'})
+    else:
+        emit('2fa_enabled_status', {'status': 'error', 'message': 'Неверный код, повторите попытку.'})
+
+@socketio.on('get_channel_members')
+def on_get_channel_members(data):
+    ch = data['channel']
+    conn, db_type = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT username FROM users")
+    users = [{'username': r[0], 'online': True} for r in cur.fetchall()]
+    conn.close()
+    emit('channel_members_list', {'members': users})
+
+@socketio.on('get_forward_targets')
+def on_get_forward_targets():
+    chs = get_all_channels()
+    target_names = [c['name'] for c in chs]
+    emit('forward_targets_list', {'targets': target_names})
+
+@socketio.on('create_channel')
+def on_create_channel(data):
+    ch_name = data['name'].strip()
+    creator = data['creator']
+    is_private = data.get('is_private', 0)
+    password = data.get('password', '')
+    conn, db_type = get_db()
+    cur = conn.cursor()
+    try:
+        if db_type == 'postgres':
+            cur.execute("INSERT INTO channels (name, creator, is_private, password) VALUES (%s, %s, %s, %s)", (ch_name, creator, is_private, password))
+        else:
+            cur.execute("INSERT INTO channels (name, creator, is_private, password) VALUES (?, ?, ?, ?)", (ch_name, creator, is_private, password))
+        conn.commit()
+        join_room(ch_name)
+    except Exception: pass
+    finally: conn.close()
+    emit('channels_list', {'channels': get_all_channels()}, broadcast=True)
+
+@socketio.on('verify_channel_pass')
+def on_verify_channel_pass(data):
+    ch_name = data['name']
+    password = data['password']
+    conn, db_type = get_db()
+    cur = conn.cursor()
+    if db_type == 'postgres':
+        cur.execute("SELECT password FROM channels WHERE name = %s", (ch_name,))
+    else:
+        cur.execute("SELECT password FROM channels WHERE name = ?", (ch_name,))
+    row = cur.fetchone()
+    conn.close()
+    if row and row[0] == password:
+        emit('channel_pass_result', {'status': 'ok', 'name': ch_name})
+    else:
+        emit('channel_pass_result', {'status': 'error', 'name': ch_name})
+
+def get_all_channels():
+    conn, db_type = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT name, is_private FROM channels")
+    chs = [{'name': r[0], 'is_private': r[1]} for r in cur.fetchall()]
+    conn.close()
+    return chs
+
+@socketio.on('get_channels')
+def on_get_channels(): emit('channels_list', {'channels': get_all_channels()})
 
 @socketio.on('register')
 def on_register(data):
@@ -1631,31 +1922,6 @@ def on_update_avatar(data):
     conn.close()
     emit('avatar_updated', {'user': user, 'avatar': avatar}, broadcast=True)
 
-@socketio.on('create_channel')
-def on_create_channel(data):
-    ch_name = data['name'].strip()
-    creator = data['creator']
-    conn, db_type = get_db()
-    cur = conn.cursor()
-    try:
-        if db_type == 'postgres':
-            cur.execute("INSERT INTO channels (name, creator) VALUES (%s, %s)", (ch_name, creator))
-        else:
-            cur.execute("INSERT INTO channels (name, creator) VALUES (?, ?)", (ch_name, creator))
-        conn.commit()
-        join_room(ch_name)
-    except Exception: pass
-    finally: conn.close()
-    emit('channels_list', {'channels': get_all_channels()}, broadcast=True)
-
-def get_all_channels():
-    conn, db_type = get_db()
-    cur = conn.cursor()
-    cur.execute("SELECT name FROM channels")
-    chs = [r[0] for r in cur.fetchall()]
-    conn.close()
-    return chs
-
 @socketio.on('change_password')
 def on_change_password(data):
     user = data['user']
@@ -1686,9 +1952,6 @@ def on_change_password(data):
             return
     conn.close()
     emit('pass_response', {'status': 'error', 'message': 'Неверный старый пароль!'})
-
-@socketio.on('get_channels')
-def on_get_channels(): emit('channels_list', {'channels': get_all_channels()})
 
 @socketio.on('get_users')
 def on_get_users():
@@ -1750,25 +2013,25 @@ def on_load_history(data):
 
         if db_type == 'postgres':
             cur.execute("""
-                SELECT id, sender, target, message, msg_type, reply_to, reply_text, reactions, ttl, is_read, is_edited 
+                SELECT id, sender, target, message, msg_type, reply_to, reply_text, reactions, ttl, is_read, is_edited, forward_from 
                 FROM messages WHERE target = %s ORDER BY id ASC LIMIT 200
             """, (target,))
         else:
             cur.execute("""
-                SELECT id, sender, target, message, msg_type, reply_to, reply_text, reactions, ttl, is_read, is_edited 
+                SELECT id, sender, target, message, msg_type, reply_to, reply_text, reactions, ttl, is_read, is_edited, forward_from 
                 FROM messages WHERE target = ? ORDER BY id ASC LIMIT 200
             """, (target,))
     else:
         if db_type == 'postgres':
             cur.execute("""
-                SELECT id, sender, target, message, msg_type, reply_to, reply_text, reactions, ttl, is_read, is_edited 
+                SELECT id, sender, target, message, msg_type, reply_to, reply_text, reactions, ttl, is_read, is_edited, forward_from 
                 FROM messages 
                 WHERE (sender = %s AND target = %s) OR (sender = %s AND target = %s) 
                 ORDER BY id ASC LIMIT 200
             """, (user, target, target, user))
         else:
             cur.execute("""
-                SELECT id, sender, target, message, msg_type, reply_to, reply_text, reactions, ttl, is_read, is_edited 
+                SELECT id, sender, target, message, msg_type, reply_to, reply_text, reactions, ttl, is_read, is_edited, forward_from 
                 FROM messages 
                 WHERE (sender = ? AND target = ?) OR (sender = ? AND target = ?) 
                 ORDER BY id ASC LIMIT 200
@@ -1781,7 +2044,7 @@ def on_load_history(data):
     for r in rows:
         msgs.append({
             'id': r[0], 'sender': r[1], 'target': r[2], 'msg': r[3],
-            'msg_type': r[4], 'reply_to': r[5], 'reply_text': r[6], 'reactions': r[7], 'ttl': r[8], 'is_read': r[9], 'is_edited': r[10]
+            'msg_type': r[4], 'reply_to': r[5], 'reply_text': r[6], 'reactions': r[7], 'ttl': r[8], 'is_read': r[9], 'is_edited': r[10], 'forward_from': r[11]
         })
     emit('history_loaded', {'messages': msgs, 'pinned_msg': pinned_msg})
 
@@ -1792,15 +2055,15 @@ def on_send_msg(data):
     
     if db_type == 'postgres':
         cur.execute("""
-            INSERT INTO messages (sender, target, message, msg_type, reply_to, reply_text, ttl) 
-            VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id
-        """, (data['sender'], data['target'], data['msg'], data.get('msg_type', 'text'), data.get('reply_to'), data.get('reply_text', ''), data.get('ttl', 0)))
+            INSERT INTO messages (sender, target, message, msg_type, reply_to, reply_text, ttl, forward_from) 
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id
+        """, (data['sender'], data['target'], data['msg'], data.get('msg_type', 'text'), data.get('reply_to'), data.get('reply_text', ''), data.get('ttl', 0), data.get('forward_from', '')))
         msg_id = cur.fetchone()[0]
     else:
         cur.execute("""
-            INSERT INTO messages (sender, target, message, msg_type, reply_to, reply_text, ttl) 
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (data['sender'], data['target'], data['msg'], data.get('msg_type', 'text'), data.get('reply_to'), data.get('reply_text', ''), data.get('ttl', 0)))
+            INSERT INTO messages (sender, target, message, msg_type, reply_to, reply_text, ttl, forward_from) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (data['sender'], data['target'], data['msg'], data.get('msg_type', 'text'), data.get('reply_to'), data.get('reply_text', ''), data.get('ttl', 0), data.get('forward_from', '')))
         msg_id = cur.lastrowid
         
     conn.commit()
