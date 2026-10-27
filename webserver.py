@@ -48,11 +48,12 @@ def init_db():
                 id SERIAL PRIMARY KEY,
                 name VARCHAR(255) UNIQUE NOT NULL,
                 creator VARCHAR(255) NOT NULL,
-                members TEXT DEFAULT '',
+                mods TEXT DEFAULT '',
+                banned TEXT DEFAULT '',
                 pinned_msg TEXT DEFAULT ''
             );
         """)
-        cur.execute("INSERT INTO channels (name, creator, members) VALUES ('#general', 'system', '') ON CONFLICT (name) DO NOTHING;")
+        cur.execute("INSERT INTO channels (name, creator) VALUES ('#general', 'system') ON CONFLICT (name) DO NOTHING;")
         cur.execute("""
             CREATE TABLE IF NOT EXISTS messages (
                 id SERIAL PRIMARY KEY,
@@ -87,11 +88,12 @@ def init_db():
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT UNIQUE NOT NULL,
                 creator TEXT NOT NULL,
-                members TEXT DEFAULT '',
+                mods TEXT DEFAULT '',
+                banned TEXT DEFAULT '',
                 pinned_msg TEXT DEFAULT ''
             )
         """)
-        cur.execute("INSERT OR IGNORE INTO channels (name, creator, members) VALUES ('#general', 'system', '')")
+        cur.execute("INSERT OR IGNORE INTO channels (name, creator) VALUES ('#general', 'system')")
         cur.execute("""
             CREATE TABLE IF NOT EXISTS messages (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -230,6 +232,7 @@ class MafiaRoom:
         self.day_votes = {}
 
 mafia_rooms = {f"room_{i}": MafiaRoom(f"room_{i}", f"Комната №{i}") for i in range(1, 6)}
+online_users = {}
 
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -237,7 +240,7 @@ HTML_TEMPLATE = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Спецзвязочок</title>
+    <title>Спецзвязочок Ultra</title>
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
     <style>
         :root {
@@ -339,51 +342,10 @@ HTML_TEMPLATE = """
             justify-content: space-between;
             z-index: 99; 
         }
-        .footer-left-btns, .footer-right-btns {
-            display: flex;
-            align-items: center;
-            gap: 4px;
-            flex-shrink: 0;
-        }
-        footer input[type="text"] { 
-            flex: 1; 
-            height: 38px; 
-            background: var(--bg-color); 
-            color: var(--text-color); 
-            border: 1px solid var(--panel-border); 
-            border-radius: 10px; 
-            padding: 0 12px; 
-            font-size: 15px; 
-            outline: none; 
-            min-width: 0; 
-        }
-        footer button#send-btn { 
-            width: 38px; 
-            height: 38px; 
-            border-radius: 10px; 
-            padding: 0; 
-            flex-shrink: 0; 
-            font-size: 16px; 
-            display: flex; 
-            align-items: center; 
-            justify-content: center; 
-            margin: 0;
-        }
-        .icon-btn { 
-            background: var(--item-hover); 
-            border: 1px solid var(--panel-border); 
-            border-radius: 8px; 
-            width: 34px; 
-            height: 38px; 
-            padding: 0; 
-            display: flex; 
-            align-items: center; 
-            justify-content: center; 
-            cursor: pointer; 
-            color: var(--text-color); 
-            flex-shrink: 0; 
-            font-size: 14px; 
-        }
+        .footer-left-btns, .footer-right-btns { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+        footer input[type="text"] { flex: 1; height: 38px; background: var(--bg-color); color: var(--text-color); border: 1px solid var(--panel-border); border-radius: 10px; padding: 0 12px; font-size: 15px; outline: none; min-width: 0; }
+        footer button#send-btn { width: 38px; height: 38px; border-radius: 10px; padding: 0; flex-shrink: 0; font-size: 16px; display: flex; align-items: center; justify-content: center; margin: 0; }
+        .icon-btn { background: var(--item-hover); border: 1px solid var(--panel-border); border-radius: 8px; width: 34px; height: 38px; padding: 0; display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--text-color); flex-shrink: 0; font-size: 14px; }
         .recording { background: #c62828 !important; color: #fff !important; }
 
         .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100dvh; background: rgba(0,0,0,0.85); z-index: 1000; justify-content: center; align-items: center; padding: 15px; }
@@ -415,6 +377,9 @@ HTML_TEMPLATE = """
         #emoji-picker span { cursor: pointer; text-align: center; }
         #emoji-picker span:hover { transform: scale(1.3); }
 
+        .sticker-img { width: 100px; height: 100px; object-fit: contain; cursor: pointer; }
+        .gif-img { max-width: 200px; border-radius: 8px; cursor: pointer; }
+
         #lightbox { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100dvh; background: rgba(0,0,0,0.9); z-index: 2000; justify-content: center; align-items: center; }
         #lightbox img { max-width: 90%; max-height: 90%; border-radius: 8px; box-shadow: 0 0 20px rgba(0,0,0,0.8); }
 
@@ -422,6 +387,10 @@ HTML_TEMPLATE = """
         .media-grid-item { width: 100%; height: 90px; border-radius: 8px; background-size: cover; background-position: center; cursor: pointer; border: 1px solid var(--panel-border); }
 
         .admin-user-row { display: flex; justify-content: space-between; align-items: center; background: var(--item-hover); padding: 8px 12px; border-radius: 8px; border: 1px solid var(--panel-border); font-size: 13px; }
+
+        /* Окно аудиозвонка */
+        #call-modal { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100dvh; background: rgba(0,0,0,0.85); z-index: 3000; flex-direction: column; justify-content: center; align-items: center; gap: 20px; }
+        .call-avatar { width: 100px; height: 100px; border-radius: 50%; font-size: 36px; display: flex; align-items: center; justify-content: center; border: 3px solid #3B8ED0; }
 
         @media (max-width: 600px) {
             #sidebar { position: fixed; left: 0; top: 0; bottom: 0; width: 80%; max-width: 280px; transform: translateX(-100%); }
@@ -472,13 +441,14 @@ HTML_TEMPLATE = """
                     <button class="toggle-btn" onclick="event.stopPropagation(); toggleSidebar();">☰</button>
                     <div class="header-title-box">
                         <h3 id="chat-title" style="font-size:15px;">#general</h3>
+                        <div id="user-last-seen" style="font-size:10px; color:#aaa;"></div>
                         <div id="typing-indicator" style="font-size:11px; color:#3B8ED0; height:13px;"></div>
                     </div>
                 </div>
                 <div style="display:flex; align-items:center; gap:6px;">
+                    <button id="call-btn" class="icon-btn" style="height:32px; width:36px; display:none;" onclick="startDirectCall()" title="Позвонить">📞</button>
                     <button class="icon-btn" style="height:32px; width:auto; padding:0 8px; font-size:12px;" onclick="openGalleryModal()">🖼️ Медиа</button>
                     <button id="admin-btn" class="admin-nav-btn" onclick="openAdminModal()">⚙️ Админка</button>
-                    <span style="font-size:10px; color:#4caf50;">🔒 E2EE</span>
                 </div>
             </header>
 
@@ -499,10 +469,21 @@ HTML_TEMPLATE = """
             </div>
 
             <div id="emoji-picker">
-                <span onclick="addEmoji('👍')">👍</span><span onclick="addEmoji('❤️')">❤️</span><span onclick="addEmoji('🔥')">🔥</span>
-                <span onclick="addEmoji('😂')">😂</span><span onclick="addEmoji('😮')">😮</span><span onclick="addEmoji('🎉')">🎉</span>
-                <span onclick="addEmoji('💩')">💩</span><span onclick="addEmoji('👀')">👀</span><span onclick="addEmoji('💯')">💯</span>
-                <span onclick="addEmoji('🤝')">🤝</span>
+                <div style="display:flex; gap:10px; border-bottom:1px solid var(--panel-border); padding-bottom:5px; margin-bottom:5px; font-size:13px; font-weight:bold;">
+                    <span onclick="switchPickerTab('emoji')" style="cursor:pointer; color:#3B8ED0;">😃 Смайлы</span>
+                    <span onclick="switchPickerTab('stickers')" style="cursor:pointer; color:#3B8ED0;">🎨 Стикеры</span>
+                </div>
+                <div id="tab-emoji" style="display:grid; grid-template-columns: repeat(5, 1fr); gap:8px;">
+                    <span onclick="addEmoji('👍')">👍</span><span onclick="addEmoji('❤️')">❤️</span><span onclick="addEmoji('🔥')">🔥</span>
+                    <span onclick="addEmoji('😂')">😂</span><span onclick="addEmoji('😮')">😮</span><span onclick="addEmoji('🎉')">🎉</span>
+                    <span onclick="addEmoji('💩')">💩</span><span onclick="addEmoji('👀')">👀</span><span onclick="addEmoji('💯')">💯</span>
+                    <span onclick="addEmoji('🤝')">🤝</span>
+                </div>
+                <div id="tab-stickers" style="display:none; flex-wrap:wrap; gap:8px;">
+                    <span onclick="sendSticker('https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExcDFnYnJndXdyOXptc2o2NWt0Yjl4eWk5bzIxeWpjdHltcXlsNm0xbSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9cw/cJuYQ8A12UagY/giphy.gif')">🔥</span>
+                    <span onclick="sendSticker('https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExbmFnajA1OTdyMHg1eWpxZHRjMWs2YmlmN3ltMXdqY2M3bmtsczFkNSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9cw/l3vR85PnGiHGlHO8w/giphy.gif')">🐱</span>
+                    <span onclick="sendSticker('https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExc3AyaHBnaHR1dmdva3kyaWZpdThoNmM1OHgxeDZicTh3ZmU4Y3k5MiZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9cw/3o7TKSjRrfIPjeiVyM/giphy.gif')">🚀</span>
+                </div>
             </div>
 
             <footer>
@@ -511,7 +492,7 @@ HTML_TEMPLATE = """
                         📎
                         <input type="file" id="file-input" style="display:none;" onchange="sendFile()">
                     </label>
-                    <button class="icon-btn" onclick="toggleEmojiPicker()" title="Смайлики">😀</button>
+                    <button class="icon-btn" onclick="toggleEmojiPicker()" title="Смайлы и стикеры">😀</button>
                 </div>
 
                 <input type="text" id="msg-input" placeholder="Сообщение..." oninput="notifyTyping()" onkeypress="if(event.key==='Enter') sendMsg()">
@@ -527,6 +508,17 @@ HTML_TEMPLATE = """
                     <button id="send-btn" onclick="sendMsg()">></button>
                 </div>
             </footer>
+        </div>
+    </div>
+
+    <!-- ОКНО ГОЛОСОВОГО ЗВОНКА -->
+    <div id="call-modal">
+        <div id="call-user-avatar" class="call-avatar">?</div>
+        <h3 id="call-user-name">Звонок...</h3>
+        <p id="call-status-text" style="color:#aaa; font-size:14px;">Вызов...</p>
+        <div style="display:flex; gap:15px;">
+            <button id="accept-call-btn" style="background:#2e7d32; width:auto; padding:10px 20px; display:none;" onclick="acceptCall()">Принять</button>
+            <button style="background:#c62828; width:auto; padding:10px 20px;" onclick="endCall()">Сбросить</button>
         </div>
     </div>
 
@@ -575,6 +567,7 @@ HTML_TEMPLATE = """
                     </label>
                 </div>
 
+                <button onclick="requestPushPermission()" style="background:#1F6AA5; margin-bottom:5px; padding:12px;">🔔 Разрешить Push-уведомления</button>
                 <button onclick="toggleTheme()" style="background:#444; margin-bottom:5px;">🌗 Сменить тему оформления</button>
                 <button onclick="openMafiaModal()" style="background:#8e24aa; margin-bottom:10px; padding:12px;">🕵️ Игра «Мафия»</button>
 
@@ -644,6 +637,7 @@ HTML_TEMPLATE = """
 
     <div id="lightbox" onclick="this.style.display='none'"><img id="lightbox-img" src=""></div>
     <div id="audio-peers-container" style="display:none;"></div>
+    <audio id="direct-call-audio" autoplay playsinline style="display:none;"></audio>
 
     <script>
         const socket = io();
@@ -674,6 +668,12 @@ HTML_TEMPLATE = """
         let pinnedChats = JSON.parse(localStorage.getItem('pychat_pinned') || '[]');
         let unreadCounts = {};
         let typingTimeout = null;
+        let swRegistration = null;
+
+        // Переменные звонков 1-на-1
+        let activeCallPeer = null;
+        let directCallStream = null;
+        let incomingCallData = null;
 
         const iceServers = { 
             iceServers: [
@@ -681,6 +681,57 @@ HTML_TEMPLATE = """
                 { urls: 'stun:stun1.l.google.com:19302' }
             ] 
         };
+
+        // --- DYNAMIC SERVICE WORKER ---
+        if ('serviceWorker' in navigator) {
+            const swCode = `
+                self.addEventListener('notificationclick', function(event) {
+                    event.notification.close();
+                    event.waitUntil(
+                        clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clientList => {
+                            for (let client of clientList) {
+                                if ('focus' in client) return client.focus();
+                            }
+                            if (clients.openWindow) return clients.openWindow('/');
+                        })
+                    );
+                });
+            `;
+            const blob = new Blob([swCode], { type: 'application/javascript' });
+            navigator.serviceWorker.register(URL.createObjectURL(blob)).then(reg => {
+                swRegistration = reg;
+            }).catch(e => console.log('SW error:', e));
+        }
+
+        function requestPushPermission() {
+            if ("Notification" in window) {
+                Notification.requestPermission().then(permission => {
+                    if (permission === "granted") alert("✅ Push-уведомления успешно разрешены!");
+                    else alert("⚠️ Доступ отклонен в настройках браузера.");
+                });
+            }
+        }
+
+        function triggerSystemNotification(sender, text) {
+            if (!("Notification" in window) || Notification.permission !== "granted") return;
+            const title = "Сообщение от " + sender;
+            const bodyText = text.length > 50 ? text.substring(0, 50) + "..." : text;
+            if (swRegistration && swRegistration.showNotification) {
+                swRegistration.showNotification(title, { body: bodyText, icon: 'https://cdn-icons-png.flaticon.com/512/732/732200.png' });
+            } else { new Notification(title, { body: bodyText }); }
+        }
+
+        function playNotificationSound() {
+            try {
+                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.connect(gain); gain.connect(ctx.destination);
+                osc.frequency.value = 587.33; gain.gain.setValueAtTime(0.1, ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
+                osc.start(); osc.stop(ctx.currentTime + 0.3);
+            } catch(e){}
+        }
 
         function toggleTheme() {
             document.body.classList.toggle('light-theme');
@@ -753,6 +804,10 @@ HTML_TEMPLATE = """
                 setAvatarElement(document.getElementById('my-avatar'), currentUser);
                 setAvatarElement(document.getElementById('profile-big-avatar'), currentUser);
 
+                if ("Notification" in window && Notification.permission === "default") {
+                    Notification.requestPermission();
+                }
+
                 socket.emit('get_channels');
                 socket.emit('get_users');
                 switchChat('#general');
@@ -808,7 +863,9 @@ HTML_TEMPLATE = """
         function switchChat(target) {
             currentTarget = target;
             unreadCounts[target] = 0;
-            document.getElementById('chat-title').innerText = target.startsWith('#') ? target : (target === currentUser ? '📁 Сохраненные сообщения' : '@' + target);
+            const isGroup = target.startsWith('#');
+            document.getElementById('chat-title').innerText = isGroup ? target : (target === currentUser ? '📁 Избранное' : '@' + target);
+            document.getElementById('call-btn').style.display = (!isGroup && target !== currentUser) ? 'inline-block' : 'none';
             document.getElementById('messages').innerHTML = '';
             closeSidebar();
             socket.emit('load_history', { user: currentUser, target: currentTarget });
@@ -886,6 +943,11 @@ HTML_TEMPLATE = """
                 if (u.avatar) userAvatarsMap[u.username] = u.avatar;
                 if (u.username === currentUser) return;
 
+                if (u.username === currentTarget) {
+                    const statusText = u.online ? '🟢 В сети' : 'Был(а) в сети: ' + (u.last_seen ? new Date(u.last_seen * 1000).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : 'недавно');
+                    document.getElementById('user-last-seen').innerText = statusText;
+                }
+
                 const isPinned = pinnedChats.includes(u.username);
                 const unread = unreadCounts[u.username] || 0;
                 const div = document.createElement('div');
@@ -954,12 +1016,10 @@ HTML_TEMPLATE = """
                 const row = document.createElement('div');
                 row.className = 'admin-user-row';
                 row.innerHTML = `
-                    <div>
-                        <b>${u.username}</b> <span style="font-size:11px; color:#aaa;">(${u.role})</span>
-                    </div>
+                    <div><b>${u.username}</b> <span style="font-size:11px; color:#aaa;">(${u.role})</span></div>
                     <div style="display:flex; gap:6px;">
                         <button onclick="adminSetRole('${u.username}', '${u.role === 'admin' ? 'user' : 'admin'}')" style="width:auto; padding:4px 8px; font-size:11px; background:#1F6AA5;">
-                            ${u.role === 'admin' ? 'Сделать User' : 'Сделать Admin'}
+                            ${u.role === 'admin' ? 'User' : 'Admin'}
                         </button>
                         ${u.username !== currentUser ? `<button onclick="adminDeleteUser('${u.username}')" style="width:auto; padding:4px 8px; font-size:11px; background:#d32f2f;">Удалить</button>` : ''}
                     </div>
@@ -968,14 +1028,9 @@ HTML_TEMPLATE = """
             });
         });
 
-        function adminSetRole(uname, newRole) {
-            socket.emit('admin_change_role', { admin: currentUser, target_user: uname, role: newRole });
-        }
-
+        function adminSetRole(uname, newRole) { socket.emit('admin_change_role', { admin: currentUser, target_user: uname, role: newRole }); }
         function adminDeleteUser(uname) {
-            if (confirm(`Вы уверены, что хотите удалить пользователя ${uname}?`)) {
-                socket.emit('admin_delete_user', { admin: currentUser, target_user: uname });
-            }
+            if (confirm(`Удалить ${uname}?`)) socket.emit('admin_delete_user', { admin: currentUser, target_user: uname });
         }
 
         function changePassword() {
@@ -991,8 +1046,7 @@ HTML_TEMPLATE = """
             st.style.color = data.status === 'ok' ? '#4caf50' : '#ff5555';
             if (data.status === 'ok') {
                 localStorage.setItem('pychat_pass', document.getElementById('new-pass').value.trim());
-                document.getElementById('old-pass').value = '';
-                document.getElementById('new-pass').value = '';
+                document.getElementById('old-pass').value = ''; document.getElementById('new-pass').value = '';
             }
         });
 
@@ -1009,11 +1063,21 @@ HTML_TEMPLATE = """
 
         function toggleEmojiPicker() {
             const picker = document.getElementById('emoji-picker');
-            picker.style.display = picker.style.display === 'grid' ? 'none' : 'grid';
+            picker.style.display = picker.style.display === 'block' ? 'none' : 'block';
+        }
+
+        function switchPickerTab(tab) {
+            document.getElementById('tab-emoji').style.display = tab === 'emoji' ? 'grid' : 'none';
+            document.getElementById('tab-stickers').style.display = tab === 'stickers' ? 'flex' : 'none';
         }
 
         function addEmoji(emoji) {
             document.getElementById('msg-input').value += emoji;
+            document.getElementById('emoji-picker').style.display = 'none';
+        }
+
+        function sendSticker(url) {
+            socket.emit('send_msg', { sender: currentUser, target: currentTarget, msg: url, msg_type: 'sticker' });
             document.getElementById('emoji-picker').style.display = 'none';
         }
 
@@ -1136,11 +1200,16 @@ HTML_TEMPLATE = """
         }
 
         socket.on('new_msg', (data) => { 
-            if (data.sender !== currentUser && data.target !== currentTarget && data.sender !== currentTarget) {
-                const chatKey = data.target.startsWith('#') ? data.target : data.sender;
-                unreadCounts[chatKey] = (unreadCounts[chatKey] || 0) + 1;
-                socket.emit('get_channels');
-                socket.emit('get_users');
+            if (data.sender !== currentUser) {
+                playNotificationSound();
+                triggerSystemNotification(data.sender, data.msg);
+
+                if (data.target !== currentTarget && data.sender !== currentTarget) {
+                    const chatKey = data.target.startsWith('#') ? data.target : data.sender;
+                    unreadCounts[chatKey] = (unreadCounts[chatKey] || 0) + 1;
+                    socket.emit('get_channels');
+                    socket.emit('get_users');
+                }
             }
             if (data.target === currentTarget || data.sender === currentTarget || (data.target.startsWith('#') && data.target === currentTarget)) {
                 appendMessage(data); 
@@ -1183,6 +1252,8 @@ HTML_TEMPLATE = """
                 contentHtml = `<audio controls playsinline src="data:audio/webm;base64,${msg.msg}" style="height:32px; width:170px;"></audio>`;
             } else if (msg.msg_type === 'video_note') {
                 contentHtml = `<video class="video-note" controls playsinline src="data:video/webm;base64,${msg.msg}"></video>`;
+            } else if (msg.msg_type === 'sticker') {
+                contentHtml = `<img src="${msg.msg}" class="sticker-img">`;
             }
 
             let ttlBadge = msg.ttl > 0 ? `<span style="font-size:10px; color:#ff9800;"> 💣 (${msg.ttl}s)</span>` : '';
@@ -1196,7 +1267,7 @@ HTML_TEMPLATE = """
                 if (users.length > 0) reactionsHtml += `<span class="reaction-item" onclick="addReaction(${msg.id}, '${emoji}')">${emoji} ${users.length}</span>`;
             }
 
-            let deleteBtn = isMe ? `<button class="action-btn" onclick="deleteMessage(${msg.id})">🗑️</button>` : '';
+            let deleteBtn = (isMe || userRole === 'admin') ? `<button class="action-btn" onclick="deleteMessage(${msg.id})">🗑️</button>` : '';
             let editBtn = isMe && msg.msg_type === 'text' ? `<button class="action-btn" onclick="startEditMsg(${msg.id})">✏️</button>` : '';
 
             const avatarUrl = userAvatarsMap[msg.sender];
@@ -1262,6 +1333,92 @@ HTML_TEMPLATE = """
                 const text = div.innerText.toLowerCase();
                 div.style.display = text.includes(query) ? 'flex' : 'none';
             });
+        }
+
+        /* --- ГОЛОСОВЫЕ ЗВОНКИ 1-НА-1 --- */
+        async function startDirectCall() {
+            if (currentTarget.startsWith('#')) return;
+            document.getElementById('call-modal').style.display = 'flex';
+            document.getElementById('call-user-name').innerText = '@' + currentTarget;
+            document.getElementById('call-status-text').innerText = 'Вызов собеседника...';
+            document.getElementById('accept-call-btn').style.display = 'none';
+            setAvatarElement(document.getElementById('call-user-avatar'), currentTarget);
+
+            try {
+                directCallStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                activeCallPeer = new RTCPeerConnection(iceServers);
+                directCallStream.getTracks().forEach(t => activeCallPeer.addTrack(t, directCallStream));
+
+                activeCallPeer.onicecandidate = e => {
+                    if (e.candidate) socket.emit('call_signal', { target: currentTarget, candidate: e.candidate });
+                };
+
+                activeCallPeer.ontrack = e => {
+                    document.getElementById('direct-call-audio').srcObject = e.streams[0];
+                };
+
+                const offer = await activeCallPeer.createOffer();
+                await activeCallPeer.setLocalDescription(offer);
+                socket.emit('call_start', { caller: currentUser, target: currentTarget, offer: offer });
+
+            } catch(e) { alert('Ошибка доступа к микрофону!'); endCall(); }
+        }
+
+        socket.on('incoming_call', (data) => {
+            incomingCallData = data;
+            document.getElementById('call-modal').style.display = 'flex';
+            document.getElementById('call-user-name').innerText = '@' + data.caller;
+            document.getElementById('call-status-text').innerText = 'Входящий звонок...';
+            document.getElementById('accept-call-btn').style.display = 'inline-block';
+            setAvatarElement(document.getElementById('call-user-avatar'), data.caller);
+        });
+
+        async function acceptCall() {
+            document.getElementById('accept-call-btn').style.display = 'none';
+            document.getElementById('call-status-text').innerText = 'Разговор...';
+            try {
+                directCallStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                activeCallPeer = new RTCPeerConnection(iceServers);
+                directCallStream.getTracks().forEach(t => activeCallPeer.addTrack(t, directCallStream));
+
+                activeCallPeer.onicecandidate = e => {
+                    if (e.candidate) socket.emit('call_signal', { target: incomingCallData.caller, candidate: e.candidate });
+                };
+
+                activeCallPeer.ontrack = e => {
+                    document.getElementById('direct-call-audio').srcObject = e.streams[0];
+                };
+
+                await activeCallPeer.setRemoteDescription(new RTCSessionDescription(incomingCallData.offer));
+                const answer = await activeCallPeer.createAnswer();
+                await activeCallPeer.setLocalDescription(answer);
+                socket.emit('call_accept', { target: incomingCallData.caller, answer: answer });
+
+            } catch(e) { alert('Ошибка соединения!'); endCall(); }
+        }
+
+        socket.on('call_accepted', async (data) => {
+            document.getElementById('call-status-text').innerText = 'Разговор...';
+            if (activeCallPeer) await activeCallPeer.setRemoteDescription(new RTCSessionDescription(data.answer));
+        });
+
+        socket.on('call_signal', async (data) => {
+            if (activeCallPeer && data.candidate) await activeCallPeer.addIceCandidate(new RTCIceCandidate(data.candidate));
+        });
+
+        socket.on('call_ended', () => { endCallLocal(); });
+
+        function endCall() {
+            const target = incomingCallData ? incomingCallData.caller : currentTarget;
+            socket.emit('call_end', { target: target });
+            endCallLocal();
+        }
+
+        function endCallLocal() {
+            if (directCallStream) directCallStream.getTracks().forEach(t => t.stop());
+            if (activeCallPeer) activeCallPeer.close();
+            activeCallPeer = null; directCallStream = null; incomingCallData = null;
+            document.getElementById('call-modal').style.display = 'none';
         }
 
         /* --- WEBRTC И МАФИЯ --- */
@@ -1475,6 +1632,24 @@ HTML_TEMPLATE = """
 @app.route('/')
 def index(): return render_template_string(HTML_TEMPLATE)
 
+@socketio.on('connect')
+def on_connect(): pass
+
+@socketio.on('disconnect')
+def on_disconnect():
+    for uname, sid in list(online_users.items()):
+        if sid == request.sid:
+            del online_users[uname]
+            conn, db_type = get_db()
+            cur = conn.cursor()
+            now = int(time.time())
+            if db_type == 'postgres': cur.execute("UPDATE users SET last_seen = %s WHERE username = %s", (now, uname))
+            else: cur.execute("UPDATE users SET last_seen = ? WHERE username = ?", (now, uname))
+            conn.commit()
+            conn.close()
+            on_get_users()
+            break
+
 @socketio.on('login')
 def on_login(data):
     username = data.get('username', '').strip()
@@ -1494,9 +1669,11 @@ def on_login(data):
         check_hash, _ = hash_password(password, salt)
         if check_hash == pwd_hash:
             conn.close()
+            online_users[username] = request.sid
             join_room(username)
             join_room('#general')
             emit('auth_response', {'status': 'ok', 'username': username, 'role': role, 'avatar': avatar})
+            on_get_users()
         else:
             conn.close()
             emit('auth_response', {'status': 'error', 'message': 'Неверный пароль'})
@@ -1523,6 +1700,18 @@ def on_register(data):
     except Exception:
         emit('auth_response', {'status': 'error', 'message': 'Логин занят'})
     finally: conn.close()
+
+@socketio.on('call_start')
+def on_call_start(data): emit('incoming_call', data, room=data['target'])
+
+@socketio.on('call_accept')
+def on_call_accept(data): emit('call_accepted', data, room=data['target'])
+
+@socketio.on('call_signal')
+def on_call_signal(data): emit('call_signal', data, room=data['target'])
+
+@socketio.on('call_end')
+def on_call_end(data): emit('call_ended', data, room=data['target'])
 
 @socketio.on('create_channel')
 def on_create_channel(data):
@@ -1654,7 +1843,7 @@ def on_get_users():
     conn, db_type = get_db()
     cur = conn.cursor()
     cur.execute("SELECT username, role, last_seen, avatar FROM users")
-    users = [{'username': r[0], 'online': True, 'last_seen': r[2], 'avatar': r[3]} for r in cur.fetchall()]
+    users = [{'username': r[0], 'online': (r[0] in online_users), 'last_seen': r[2], 'avatar': r[3]} for r in cur.fetchall()]
     conn.close()
     emit('users_list', {'users': users}, broadcast=True)
 
