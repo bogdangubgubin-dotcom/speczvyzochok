@@ -241,6 +241,8 @@ HTML_TEMPLATE = """
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Спецзвязочок Ultra</title>
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#1F6AA5">
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
     <style>
         :root {
@@ -378,7 +380,6 @@ HTML_TEMPLATE = """
         #emoji-picker span:hover { transform: scale(1.3); }
 
         .sticker-img { width: 100px; height: 100px; object-fit: contain; cursor: pointer; }
-        .gif-img { max-width: 200px; border-radius: 8px; cursor: pointer; }
 
         #lightbox { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100dvh; background: rgba(0,0,0,0.9); z-index: 2000; justify-content: center; align-items: center; }
         #lightbox img { max-width: 90%; max-height: 90%; border-radius: 8px; box-shadow: 0 0 20px rgba(0,0,0,0.8); }
@@ -388,7 +389,6 @@ HTML_TEMPLATE = """
 
         .admin-user-row { display: flex; justify-content: space-between; align-items: center; background: var(--item-hover); padding: 8px 12px; border-radius: 8px; border: 1px solid var(--panel-border); font-size: 13px; }
 
-        /* Окно аудиозвонка */
         #call-modal { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100dvh; background: rgba(0,0,0,0.85); z-index: 3000; flex-direction: column; justify-content: center; align-items: center; gap: 20px; }
         .call-avatar { width: 100px; height: 100px; border-radius: 50%; font-size: 36px; display: flex; align-items: center; justify-content: center; border: 3px solid #3B8ED0; }
 
@@ -670,7 +670,6 @@ HTML_TEMPLATE = """
         let typingTimeout = null;
         let swRegistration = null;
 
-        // Переменные звонков 1-на-1
         let activeCallPeer = null;
         let directCallStream = null;
         let incomingCallData = null;
@@ -682,23 +681,8 @@ HTML_TEMPLATE = """
             ] 
         };
 
-        // --- DYNAMIC SERVICE WORKER ---
         if ('serviceWorker' in navigator) {
-            const swCode = `
-                self.addEventListener('notificationclick', function(event) {
-                    event.notification.close();
-                    event.waitUntil(
-                        clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clientList => {
-                            for (let client of clientList) {
-                                if ('focus' in client) return client.focus();
-                            }
-                            if (clients.openWindow) return clients.openWindow('/');
-                        })
-                    );
-                });
-            `;
-            const blob = new Blob([swCode], { type: 'application/javascript' });
-            navigator.serviceWorker.register(URL.createObjectURL(blob)).then(reg => {
+            navigator.serviceWorker.register('/sw.js').then(reg => {
                 swRegistration = reg;
             }).catch(e => console.log('SW error:', e));
         }
@@ -1001,7 +985,6 @@ HTML_TEMPLATE = """
         }
         function closeGalleryModal() { document.getElementById('gallery-modal').style.display = 'none'; }
 
-        /* --- ФУНКЦИОНАЛ АДМИНКИ --- */
         function openAdminModal() {
             if (userRole !== 'admin' && currentUser !== 'totr') return;
             document.getElementById('admin-modal').style.display = 'flex';
@@ -1631,6 +1614,55 @@ HTML_TEMPLATE = """
 
 @app.route('/')
 def index(): return render_template_string(HTML_TEMPLATE)
+
+@app.route('/manifest.json')
+def serve_manifest():
+    return {
+        "name": "Спецзвязочок Ultra",
+        "short_name": "Спецзвязок",
+        "description": "Защищенный мессенджер с поддержкой звонков и игр",
+        "start_url": "/",
+        "display": "standalone",
+        "background_color": "#121212",
+        "theme_color": "#1F6AA5",
+        "icons": [
+            {
+                "src": "https://cdn-icons-png.flaticon.com/512/732/732200.png",
+                "sizes": "512x512",
+                "type": "image/png",
+                "purpose": "any maskable"
+            }
+        ]
+    }, 200, {'Content-Type': 'application/json'}
+
+@app.route('/sw.js')
+def serve_sw():
+    sw_code = """
+    self.addEventListener('install', (e) => {
+        self.skipWaiting();
+    });
+
+    self.addEventListener('activate', (e) => {
+        e.waitUntil(clients.claim());
+    });
+
+    self.addEventListener('fetch', (e) => {
+        e.respondWith(fetch(e.request));
+    });
+
+    self.addEventListener('notificationclick', function(event) {
+        event.notification.close();
+        event.waitUntil(
+            clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clientList => {
+                for (let client of clientList) {
+                    if ('focus' in client) return client.focus();
+                }
+                if (clients.openWindow) return clients.openWindow('/');
+            })
+        );
+    });
+    """
+    return sw_code, 200, {'Content-Type': 'application/javascript'}
 
 @socketio.on('connect')
 def on_connect(): pass
