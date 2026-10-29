@@ -12,8 +12,7 @@ from flask_socketio import SocketIO, emit, join_room, leave_room
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'speczvyazok_secret_key_2026'
 
-# Быстрый пинг для исключения задержек отправки сообщений
-socketio = SocketIO(app, cors_allowed_origins="*", max_http_buffer_size=25 * 1024 * 1024, async_mode=None, ping_timeout=10, ping_interval=5)
+socketio = SocketIO(app, cors_allowed_origins="*", max_http_buffer_size=25 * 1024 * 1024, async_mode=None)
 
 DATABASE_URL = os.environ.get('DATABASE_URL')
 
@@ -312,7 +311,7 @@ HTML_TEMPLATE = """
         .msg-me .msg-header { justify-content: flex-end; color: #e0e0e0; }
         .msg-avatar { width: 18px; height: 18px; border-radius: 50%; background-size: cover; background-position: center; display: inline-block; cursor: pointer; }
 
-        .video-note { width: 160px; height: 160px; border-radius: 12px; object-fit: cover; border: 2px solid var(--panel-border); background: #000; cursor: pointer; }
+        .video-note { width: 160px; height: 160px; border-radius: 12px; object-fit: cover; border: 2px solid var(--panel-border); background: #000; }
 
         .msg-status { font-size: 10px; align-self: flex-end; margin-top: 2px; opacity: 0.8; }
         .msg-me .msg-status { color: #bbdefb; }
@@ -383,7 +382,7 @@ HTML_TEMPLATE = """
         .sticker-img { width: 100px; height: 100px; object-fit: contain; cursor: pointer; }
 
         #lightbox { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100dvh; background: rgba(0,0,0,0.9); z-index: 2000; justify-content: center; align-items: center; }
-        #lightbox img, #lightbox video { max-width: 90%; max-height: 90%; border-radius: 12px; box-shadow: 0 0 20px rgba(0,0,0,0.8); }
+        #lightbox img { max-width: 90%; max-height: 90%; border-radius: 8px; box-shadow: 0 0 20px rgba(0,0,0,0.8); }
 
         .media-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 10px; }
         .media-grid-item { width: 100%; height: 90px; border-radius: 8px; background-size: cover; background-position: center; cursor: pointer; border: 1px solid var(--panel-border); }
@@ -636,24 +635,12 @@ HTML_TEMPLATE = """
         </div>
     </div>
 
-    <!-- ЛАЙТБОКС С ПОДДЕРЖКОЙ ВИДЕО -->
-    <div id="lightbox" onclick="closeLightbox()">
-        <img id="lightbox-img" src="" style="display:none;">
-        <video id="lightbox-video" controls autoplay loop playsinline style="display:none; max-width:90%; max-height:90%; border-radius:12px;"></video>
-    </div>
-
+    <div id="lightbox" onclick="this.style.display='none'"><img id="lightbox-img" src=""></div>
     <div id="audio-peers-container" style="display:none;"></div>
     <audio id="direct-call-audio" autoplay playsinline style="display:none;"></audio>
 
     <script>
-        const socket = io({
-            reconnection: true,
-            reconnectionAttempts: Infinity,
-            reconnectionDelay: 1000,
-            reconnectionDelayMax: 5000,
-            timeout: 20000
-        });
-
+        const socket = io();
         let currentUser = "";
         let currentTarget = "#general";
         let userRole = "user";
@@ -739,24 +726,8 @@ HTML_TEMPLATE = """
         function openLightbox(bgStyleUrl) {
             let url = bgStyleUrl.replace('url("', '').replace('")', '').replace("url('", '').replace("')", '');
             if (!url || url === 'none') return;
-            document.getElementById('lightbox-video').style.display = 'none';
             document.getElementById('lightbox-img').src = url;
-            document.getElementById('lightbox-img').style.display = 'block';
             document.getElementById('lightbox').style.display = 'flex';
-        }
-
-        function openVideoLightbox(src) {
-            document.getElementById('lightbox-img').style.display = 'none';
-            const vid = document.getElementById('lightbox-video');
-            vid.src = src;
-            vid.style.display = 'block';
-            document.getElementById('lightbox').style.display = 'flex';
-        }
-
-        function closeLightbox() {
-            document.getElementById('lightbox').style.display = 'none';
-            const vid = document.getElementById('lightbox-video');
-            vid.pause();
         }
 
         function getAvatarColor(name) {
@@ -1094,7 +1065,6 @@ HTML_TEMPLATE = """
         }
 
         function sendMsg() {
-            if (!socket.connected) socket.connect();
             const txt = document.getElementById('msg-input').value.trim();
             const ttl = parseInt(document.getElementById('ttl-select').value) || 0;
             if (!txt) return;
@@ -1264,7 +1234,7 @@ HTML_TEMPLATE = """
             } else if (msg.msg_type === 'voice') {
                 contentHtml = `<audio controls playsinline src="data:audio/webm;base64,${msg.msg}" style="height:32px; width:170px;"></audio>`;
             } else if (msg.msg_type === 'video_note') {
-                contentHtml = `<video class="video-note" controls playsinline src="data:video/webm;base64,${msg.msg}" onclick="openVideoLightbox(this.src)"></video>`;
+                contentHtml = `<video class="video-note" controls playsinline src="data:video/webm;base64,${msg.msg}"></video>`;
             } else if (msg.msg_type === 'sticker') {
                 contentHtml = `<img src="${msg.msg}" class="sticker-img">`;
             }
@@ -1637,23 +1607,6 @@ HTML_TEMPLATE = """
 
         function openProfileModal() { document.getElementById('profile-modal').style.display = 'flex'; }
         function closeProfileModal() { document.getElementById('profile-modal').style.display = 'none'; }
-
-        // Восстановление соединения и актуализация чатов при возврате на вкладку
-        socket.on('disconnect', (reason) => {
-            if (reason === "io server disconnect" || reason === "transport close") {
-                socket.connect();
-            }
-        });
-
-        document.addEventListener('visibilitychange', () => {
-            if (document.visibilityState === 'visible') {
-                if (!socket.connected) socket.connect();
-                if (currentUser) {
-                    socket.emit('get_users');
-                    if (currentTarget) socket.emit('load_history', { user: currentUser, target: currentTarget });
-                }
-            }
-        });
     </script>
 </body>
 </html>
