@@ -479,8 +479,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                     <span onclick="addEmoji('🤝')">🤝</span>
                 </div>
                 <div id="tab-stickers" style="display:none; flex-wrap:wrap; gap:8px;">
-                    <span onclick="sendSticker('https://media.giphy.com/media/v1.Y2lkPTc5MGI3 области/cJuYQ8A12UagY/giphy.gif')">🔥</span>
-                    <span onclick="sendSticker('https://media.giphy.com/media/v1.Y2lkPTc5MGI36ExxbmFnajA1OTdyMHg1eWpxZHRjMWs2YmlmN3ltMXdqY2M3bmtsczFkNSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9cw/l3vR85PnGiHGlHO8w/giphy.gif')">🐱</span>
+                    <span onclick="sendSticker('https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExcDFnYnJndXdyOXptc2o2NWt0Yjl4eWk5bzIxeWpjdHltcXlsNm0xbSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9cw/cJuYQ8A12UagY/giphy.gif')">🔥</span>
+                    <span onclick="sendSticker('https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExbmFnajA1OTdyMHg1eWpxZHRjMWs2YmlmN3ltMXdqY2M3bmtsczFkNSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9cw/l3vR85PnGiHGlHO8w/giphy.gif')">🐱</span>
                 </div>
             </div>
 
