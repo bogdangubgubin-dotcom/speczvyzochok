@@ -1145,7 +1145,7 @@ HTML_TEMPLATE = """
                 if (msg.msg_type === 'file') {
                     try {
                         const fileData = JSON.parse(msg.msg);
-                        if (fileData.name.match(/\.(jpg|jpeg|png|gif|webp)$/i)) {
+                        if (/\.(jpg|jpeg|png|gif|webp)$/i.test(fileData.name)) {
                             const item = document.createElement('div');
                             item.className = 'media-grid-item';
                             item.style.backgroundImage = `url('data:image/jpeg;base64,${fileData.data}')`;
@@ -1414,7 +1414,7 @@ HTML_TEMPLATE = """
             if (msg.msg_type === 'file') {
                 try {
                     const fileData = JSON.parse(msg.msg);
-                    if (fileData.name.match(/\.(jpg|jpeg|png|gif|webp)$/i)) {
+                    if (/\.(jpg|jpeg|png|gif|webp)$/i.test(fileData.name)) {
                         contentHtml = `<img src="data:image/jpeg;base64,${fileData.data}" style="max-width:180px; border-radius:8px; cursor:pointer;" onclick="openLightbox(this.src)">`;
                     } else {
                         contentHtml = `<a href="data:application/octet-stream;base64,${fileData.data}" download="${fileData.name}" style="color:#fff;">📁 ${fileData.name}</a>`;
@@ -2024,7 +2024,6 @@ def on_call_start(data):
         emit('new_msg', missed_msg, room=request.sid)
         emit('call_failed', {'target': target, 'reason': 'offline'}, room=request.sid)
 
-        # Отправляем фоновый Push пользователю вне сети
         send_web_push(target, f"Звонок от {caller}", "Вам звонили (пропущенный вызов)")
     else:
         emit('incoming_call', data, room=target)
@@ -2290,7 +2289,6 @@ def on_send_msg(data):
         emit('new_msg', data, room=target)
         if data['sender'] != target: emit('new_msg', data, room=data['sender'])
 
-        # Если получатель оффлайн, отправляем ему Web Push
         if target not in online_users:
             display_text = data['msg']
             if data.get('msg_type') == 'voice': display_text = '🎤 Голосовое сообщение'
@@ -2318,4 +2316,119 @@ def on_add_reaction(data):
     msg_id = data['msg_id']
     emoji = data['emoji']
     user = data['user']
-    conn, db_type = get_db
+    conn, db_type = get_db()
+    cur = conn.cursor()
+    if db_type == 'postgres':
+        cur.execute("SELECT reactions FROM messages WHERE id = %s", (msg_id,))
+    else:
+        cur.execute("SELECT reactions FROM messages WHERE id = ?", (msg_id,))
+    row = cur.fetchone()
+
+    if row:
+        reactions = json.loads(row[0] or '{}')
+        if emoji not in reactions: reactions[emoji] = []
+        if user in reactions[emoji]: reactions[emoji].remove(user)
+        else: reactions[emoji].append(user)
+
+        if db_type == 'postgres':
+            cur.execute("UPDATE messages SET reactions = %s WHERE id = %s", (json.dumps(reactions), msg_id))
+        else:
+            cur.execute("UPDATE messages SET reactions = ? WHERE id = ?", (json.dumps(reactions), msg_id))
+        conn.commit()
+        conn.close()
+        emit('update_msg_reactions', {'msg_id': msg_id, 'reactions': reactions}, broadcast=True)
+
+@socketio.on('delete_msg')
+def on_delete_msg(data):
+    msg_id = data['msg_id']
+    conn, db_type = get_db()
+    cur = conn.cursor()
+    if db_type == 'postgres':
+        cur.execute("DELETE FROM messages WHERE id = %s", (msg_id,))
+    else:
+        cur.execute("DELETE FROM messages WHERE id = ?", (msg_id,))
+    conn.commit()
+    conn.close()
+    emit('msg_deleted', {'msg_id': msg_id}, broadcast=True)
+
+@socketio.on('webrtc_join')
+def on_webrtc_join(data):
+    room_id = data.get('room_id')
+    join_room(room_id)
+    emit('webrtc_user_joined', {'user': data['user'], 'sid': request.sid}, room=room_id, include_self=False)
+
+@socketio.on('webrtc_signal')
+def on_webrtc_signal(data):
+    target_sid = data.get('target_sid')
+    data['sender_sid'] = request.sid
+    if target_sid: emit('webrtc_signal', data, room=target_sid)
+
+def broadcast_room_state(room_id):
+    room = mafia_rooms[room_id]
+    emit('mafia_room_update', {
+        'room_id': room.room_id,
+        'name': room.name,
+        'state': room.state,
+        'players': room.players,
+        'logs': room.logs,
+        'timer_end': room.timer_end
+    }, broadcast=True)
+
+@socketio.on('mafia_get_rooms')
+def on_mafia_get_rooms():
+    rinfo = {}
+    for rid, r in mafia_rooms.items(): rinfo[rid] = {'name': r.name, 'state': r.state, 'count': len(r.players)}
+    emit('mafia_rooms_list', {'rooms': rinfo})
+
+@socketio.on('mafia_get_room_state')
+def on_mafia_get_room_state(data): broadcast_room_state(data['room_id'])
+
+@socketio.on('mafia_join')
+def on_mafia_join(data):
+    rid = data['room_id']
+    room = mafia_rooms[rid]
+    if room.add_player(data['user']):
+        room.logs.append(f"Игрок **{data['user']}** занял место.")
+        broadcast_room_state(rid)
+
+@socketio.on('mafia_leave')
+def on_mafia_leave(data):
+    rid = data['room_id']
+    room = mafia_rooms[rid]
+    if room.remove_player(data['user']):
+        room.logs.append(f"Игрок **{data['user']}** покинул место.")
+        broadcast_room_state(rid)
+
+@socketio.on('mafia_start')
+def on_mafia_start(data):
+    rid = data['room_id']
+    room = mafia_rooms[rid]
+    ok, msg = room.start_game()
+    if ok: broadcast_room_state(rid)
+
+@socketio.on('mafia_action')
+def on_mafia_action(data):
+    rid = data['room_id']
+    room = mafia_rooms[rid]
+    user = data['user']
+    target = data['target']
+    act = data['action']
+
+    if room.state == 'night':
+        if act == 'kill' and room.players[user]['role'] == 'mafia': room.night_actions['mafia'][user] = target
+        alive_mafia = [u for u, p in room.players.items() if p['alive'] and p['role'] == 'mafia']
+        if len(room.night_actions['mafia']) >= len(alive_mafia):
+            room.process_night()
+            broadcast_room_state(rid)
+
+    elif room.state == 'day':
+        if act == 'vote':
+            room.day_votes[user] = target
+            alive_count = sum(1 for p in room.players.values() if p['alive'])
+            if len(room.day_votes) >= alive_count:
+                room.process_day()
+                broadcast_room_state(rid)
+
+if __name__ == '__main__':
+    port = int(os.environ.get('PORT', 5000))
+    socketio.run(app, host='0.0.0.0', port=port, allow_unsafe_werkzeug=True)
