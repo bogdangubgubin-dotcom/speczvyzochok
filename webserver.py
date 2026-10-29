@@ -850,6 +850,8 @@ HTML_TEMPLATE = """
         }
 
         function triggerSystemNotification(sender, text) {
+            if (document.visibilityState === 'visible' && currentTarget === sender) return;
+
             if (!("Notification" in window) || Notification.permission !== "granted") return;
             const title = "Сообщение от " + sender;
             const bodyText = text.length > 80 ? text.substring(0, 80) + "..." : text;
@@ -1028,6 +1030,7 @@ HTML_TEMPLATE = """
             closeSidebar();
             socket.emit('load_history', { user: currentUser, target: currentTarget });
             socket.emit('get_users');
+            socket.emit('update_current_chat', { user: currentUser, active_chat: currentTarget });
         }
 
         socket.on('history_loaded', (data) => {
@@ -1892,6 +1895,8 @@ def serve_sw():
     """
     return sw_code, 200, {'Content-Type': 'application/javascript'}
 
+user_active_chats = {}
+
 @socketio.on('connect')
 def on_connect(): pass
 
@@ -1900,6 +1905,7 @@ def on_disconnect():
     for uname, sid in list(online_users.items()):
         if sid == request.sid:
             del online_users[uname]
+            if uname in user_active_chats: del user_active_chats[uname]
             conn, db_type = get_db()
             cur = conn.cursor()
             now = int(time.time())
@@ -1909,6 +1915,13 @@ def on_disconnect():
             conn.close()
             on_get_users()
             break
+
+@socketio.on('update_current_chat')
+def on_update_current_chat(data):
+    user = data.get('user')
+    active_chat = data.get('active_chat')
+    if user and active_chat:
+        user_active_chats[user] = active_chat
 
 @socketio.on('save_push_subscription')
 def on_save_push_subscription(data):
@@ -1954,6 +1967,7 @@ def on_login(data):
         if check_hash == pwd_hash:
             conn.close()
             online_users[username] = request.sid
+            user_active_chats[username] = '#general'
             join_room(username)
             join_room('#general')
             emit('auth_response', {'status': 'ok', 'username': username, 'role': role, 'avatar': avatar})
@@ -1990,6 +2004,9 @@ def on_call_start(data):
     caller = data.get('caller')
     target = data.get('target')
     
+    # Отправляем фоновый Push о вызове мгновенно
+    send_web_push(target, f"📞 Входящий звонок от {caller}", "Вам звонят! Откройте приложение, чтобы ответить.")
+
     if target not in online_users:
         conn, db_type = get_db()
         cur = conn.cursor()
@@ -2023,8 +2040,6 @@ def on_call_start(data):
         }
         emit('new_msg', missed_msg, room=request.sid)
         emit('call_failed', {'target': target, 'reason': 'offline'}, room=request.sid)
-
-        send_web_push(target, f"Звонок от {caller}", "Вам звонили (пропущенный вызов)")
     else:
         emit('incoming_call', data, room=target)
 
@@ -2282,20 +2297,23 @@ def on_send_msg(data):
     data['is_read'] = 0
     data['is_edited'] = 0
     target = data['target']
+    sender = data['sender']
     
     if target.startswith('#'):
         emit('new_msg', data, room=target)
     else:
         emit('new_msg', data, room=target)
-        if data['sender'] != target: emit('new_msg', data, room=data['sender'])
+        if sender != target: emit('new_msg', data, room=sender)
 
-        if target not in online_users:
+        # Отправляем Push, ТОЛЬКО если пользователь закрыл приложение или свернул чат с отправителем
+        recipient_active_chat = user_active_chats.get(target)
+        if recipient_active_chat != sender:
             display_text = data['msg']
             if data.get('msg_type') == 'voice': display_text = '🎤 Голосовое сообщение'
             elif data.get('msg_type') == 'video_note': display_text = '📹 Видео-сообщение'
             elif data.get('msg_type') == 'sticker': display_text = '🎨 Стикер'
             elif data.get('msg_type') == 'file': display_text = '📁 Файл'
-            send_web_push(target, f"Сообщение от {data['sender']}", display_text)
+            send_web_push(target, f"Сообщение от {sender}", display_text)
 
 @socketio.on('edit_msg')
 def on_edit_msg(data):
