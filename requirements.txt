@@ -3,3 +3,4 @@ Flask-SocketIO
 psycopg2-binary
 gunicorn
 pyotp
+pywebpush
