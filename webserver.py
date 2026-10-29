@@ -12,7 +12,8 @@ from flask_socketio import SocketIO, emit, join_room, leave_room
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'speczvyazok_secret_key_2026'
 
-socketio = SocketIO(app, cors_allowed_origins="*", max_http_buffer_size=25 * 1024 * 1024, async_mode=None)
+# Быстрый пинг для исключения задержек отправки сообщений
+socketio = SocketIO(app, cors_allowed_origins="*", max_http_buffer_size=25 * 1024 * 1024, async_mode=None, ping_timeout=10, ping_interval=5)
 
 DATABASE_URL = os.environ.get('DATABASE_URL')
 
@@ -264,7 +265,7 @@ HTML_TEMPLATE = """
         }
 
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-        html, body { width: 100vw; height: 100dvh; overflow: hidden; background: var(--bg-color); color: var(--text-color); position: fixed; top: 0; left: 0; transition: background 0.3s, color 0.3s; }
+        html, body { width: 100vw; height: 100dvh; overflow: hidden; background: var(--bg-color); color: var(--text-color); position: fixed; top: 0; left: 0; transition: background 0.3s, color 0.3s; touch-action: manipulation; }
         
         #auth-screen { display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100dvh; padding: 20px; }
         .auth-box { background: var(--panel-bg); padding: 25px; border-radius: 16px; width: 100%; max-width: 340px; text-align: center; border: 1px solid var(--panel-border); }
@@ -304,14 +305,14 @@ HTML_TEMPLATE = """
 
         .chat-container { flex: 1; overflow-y: auto; padding: 15px 12px 75px 12px; display: flex; flex-direction: column; gap: 10px; -webkit-overflow-scrolling: touch; }
         
-        .message { max-width: 85%; padding: 8px 12px; border-radius: 12px; font-size: 14px; position: relative; display: flex; flex-direction: column; gap: 3px; word-wrap: break-word; user-select: text; margin-top: 4px; }
+        .message { max-width: 85%; padding: 8px 12px; border-radius: 12px; font-size: 14px; position: relative; display: flex; flex-direction: column; gap: 3px; word-wrap: break-word; user-select: text; margin-top: 4px; transition: transform 0.15s ease-out; touch-action: pan-y; }
         .msg-me { background: var(--accent-color); color: #fff; align-self: flex-end; border-bottom-right-radius: 2px; }
         .msg-other { background: var(--panel-bg); border: 1px solid var(--panel-border); align-self: flex-start; border-bottom-left-radius: 2px; }
         .msg-header { display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: bold; color: #82b1ff; }
         .msg-me .msg-header { justify-content: flex-end; color: #e0e0e0; }
         .msg-avatar { width: 18px; height: 18px; border-radius: 50%; background-size: cover; background-position: center; display: inline-block; cursor: pointer; }
 
-        .video-note { width: 160px; height: 160px; border-radius: 12px; object-fit: cover; border: 2px solid var(--panel-border); background: #000; }
+        .video-note { width: 160px; height: 160px; border-radius: 12px; object-fit: cover; border: 2px solid var(--panel-border); background: #000; cursor: pointer; }
 
         .msg-status { font-size: 10px; align-self: flex-end; margin-top: 2px; opacity: 0.8; }
         .msg-me .msg-status { color: #bbdefb; }
@@ -382,7 +383,7 @@ HTML_TEMPLATE = """
         .sticker-img { width: 100px; height: 100px; object-fit: contain; cursor: pointer; }
 
         #lightbox { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100dvh; background: rgba(0,0,0,0.9); z-index: 2000; justify-content: center; align-items: center; }
-        #lightbox img { max-width: 90%; max-height: 90%; border-radius: 8px; box-shadow: 0 0 20px rgba(0,0,0,0.8); }
+        #lightbox img, #lightbox video { max-width: 90%; max-height: 90%; border-radius: 12px; box-shadow: 0 0 20px rgba(0,0,0,0.8); }
 
         .media-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 10px; }
         .media-grid-item { width: 100%; height: 90px; border-radius: 8px; background-size: cover; background-position: center; cursor: pointer; border: 1px solid var(--panel-border); }
@@ -515,7 +516,7 @@ HTML_TEMPLATE = """
     <div id="call-modal">
         <div id="call-user-avatar" class="call-avatar">?</div>
         <h3 id="call-user-name">Звонок...</h3>
-        <p id="call-status-text" style="color:#aaa; font-size:14px;">Вызов...</p>
+        <p id="call-status-text" style="color:#aaa; font-size:14px; text-align:center; padding:0 10px;">Вызов...</p>
         <div style="display:flex; gap:15px;">
             <button id="accept-call-btn" style="background:#2e7d32; width:auto; padding:10px 20px; display:none;" onclick="acceptCall()">Принять</button>
             <button style="background:#c62828; width:auto; padding:10px 20px;" onclick="endCall()">Сбросить</button>
@@ -635,12 +636,24 @@ HTML_TEMPLATE = """
         </div>
     </div>
 
-    <div id="lightbox" onclick="this.style.display='none'"><img id="lightbox-img" src=""></div>
+    <!-- ЛАЙТБОКС С ПОДДЕРЖКОЙ ВИДЕО И КАРТИНОК -->
+    <div id="lightbox" onclick="closeLightbox()">
+        <img id="lightbox-img" src="" style="display:none;">
+        <video id="lightbox-video" controls autoplay loop playsinline style="display:none; max-width:90%; max-height:90%; border-radius:12px;"></video>
+    </div>
+
     <div id="audio-peers-container" style="display:none;"></div>
     <audio id="direct-call-audio" autoplay playsinline style="display:none;"></audio>
 
     <script>
-        const socket = io();
+        const socket = io({
+            reconnection: true,
+            reconnectionAttempts: Infinity,
+            reconnectionDelay: 1000,
+            reconnectionDelayMax: 5000,
+            timeout: 20000
+        });
+
         let currentUser = "";
         let currentTarget = "#general";
         let userRole = "user";
@@ -687,6 +700,76 @@ HTML_TEMPLATE = """
             }).catch(e => console.log('SW error:', e));
         }
 
+        /* --- ГЛОБАЛЬНАЯ ОБРАБОТКА СВАЙПОВ ЭКРАНА (ОТКРЫТИЕ / ЗАКРЫТИЕ МЕНЮ) --- */
+        let globalStartX = 0, globalStartY = 0;
+
+        document.addEventListener('touchstart', (e) => {
+            if (e.touches.length !== 1) return;
+            globalStartX = e.touches[0].clientX;
+            globalStartY = e.touches[0].clientY;
+        }, { passive: true });
+
+        document.addEventListener('touchend', (e) => {
+            if (e.changedTouches.length !== 1) return;
+            const endX = e.changedTouches[0].clientX;
+            const endY = e.changedTouches[0].clientY;
+            const diffX = endX - globalStartX;
+            const diffY = endY - globalStartY;
+
+            if (Math.abs(diffX) > Math.abs(diffY)) {
+                const sidebar = document.getElementById('sidebar');
+                const isOpen = sidebar.classList.contains('open');
+
+                // Свайп слева направо от края экрана (до 40px) открывает боковую панель
+                if (!isOpen && globalStartX < 40 && diffX > 60) {
+                    toggleSidebar();
+                }
+                // Свайп справа налево при открытом меню закрывает его
+                else if (isOpen && diffX < -60) {
+                    closeSidebar();
+                }
+            }
+        });
+
+        /* --- СВАЙП НА СООБЩЕНИЯХ ДЛЯ БЫСТРОГО ОТВЕТА (REPLY) --- */
+        function attachSwipeToMessage(elem, msgId) {
+            let startX = 0, startY = 0, deltaX = 0, deltaY = 0;
+            let isSwiping = false;
+
+            elem.addEventListener('touchstart', (e) => {
+                if (e.touches.length !== 1) return;
+                startX = e.touches[0].clientX;
+                startY = e.touches[0].clientY;
+                deltaX = 0; deltaY = 0;
+                isSwiping = false;
+                elem.style.transition = 'none';
+            }, { passive: true });
+
+            elem.addEventListener('touchmove', (e) => {
+                if (e.touches.length !== 1) return;
+                deltaX = e.touches[0].clientX - startX;
+                deltaY = e.touches[0].clientY - startY;
+
+                // Пропускаем вертикальный скролл
+                if (!isSwiping && Math.abs(deltaY) > Math.abs(deltaX)) return;
+
+                if (deltaX > 0 && deltaX < 120) {
+                    isSwiping = true;
+                    elem.style.transform = `translateX(${deltaX}px)`;
+                }
+            }, { passive: true });
+
+            elem.addEventListener('touchend', () => {
+                elem.style.transition = 'transform 0.2s ease-out';
+                elem.style.transform = 'translateX(0px)';
+                if (isSwiping && deltaX > 55) {
+                    if (navigator.vibrate) navigator.vibrate(15);
+                    setReplyMsg(msgId);
+                }
+                isSwiping = false;
+            });
+        }
+
         function requestPushPermission() {
             if ("Notification" in window) {
                 Notification.requestPermission().then(permission => {
@@ -699,10 +782,19 @@ HTML_TEMPLATE = """
         function triggerSystemNotification(sender, text) {
             if (!("Notification" in window) || Notification.permission !== "granted") return;
             const title = "Сообщение от " + sender;
-            const bodyText = text.length > 50 ? text.substring(0, 50) + "..." : text;
-            if (swRegistration && swRegistration.showNotification) {
-                swRegistration.showNotification(title, { body: bodyText, icon: 'https://cdn-icons-png.flaticon.com/512/732/732200.png' });
-            } else { new Notification(title, { body: bodyText }); }
+            const bodyText = text.length > 80 ? text.substring(0, 80) + "..." : text;
+            try {
+                if (swRegistration && swRegistration.showNotification) {
+                    swRegistration.showNotification(title, {
+                        body: bodyText,
+                        icon: 'https://cdn-icons-png.flaticon.com/512/732/732200.png',
+                        vibrate: [200, 100, 200],
+                        tag: 'msg-' + sender
+                    });
+                } else {
+                    new Notification(title, { body: bodyText, icon: 'https://cdn-icons-png.flaticon.com/512/732/732200.png' });
+                }
+            } catch(e) { console.log('Notification error:', e); }
         }
 
         function playNotificationSound() {
@@ -726,8 +818,24 @@ HTML_TEMPLATE = """
         function openLightbox(bgStyleUrl) {
             let url = bgStyleUrl.replace('url("', '').replace('")', '').replace("url('", '').replace("')", '');
             if (!url || url === 'none') return;
+            document.getElementById('lightbox-video').style.display = 'none';
             document.getElementById('lightbox-img').src = url;
+            document.getElementById('lightbox-img').style.display = 'block';
             document.getElementById('lightbox').style.display = 'flex';
+        }
+
+        function openVideoLightbox(src) {
+            document.getElementById('lightbox-img').style.display = 'none';
+            const vid = document.getElementById('lightbox-video');
+            vid.src = src;
+            vid.style.display = 'block';
+            document.getElementById('lightbox').style.display = 'flex';
+        }
+
+        function closeLightbox() {
+            document.getElementById('lightbox').style.display = 'none';
+            const vid = document.getElementById('lightbox-video');
+            vid.pause();
         }
 
         function getAvatarColor(name) {
@@ -1065,6 +1173,7 @@ HTML_TEMPLATE = """
         }
 
         function sendMsg() {
+            if (!socket.connected) socket.connect();
             const txt = document.getElementById('msg-input').value.trim();
             const ttl = parseInt(document.getElementById('ttl-select').value) || 0;
             if (!txt) return;
@@ -1185,7 +1294,20 @@ HTML_TEMPLATE = """
         socket.on('new_msg', (data) => { 
             if (data.sender !== currentUser) {
                 playNotificationSound();
-                triggerSystemNotification(data.sender, data.msg);
+
+                // Читаемый формат сообщений для системных уведомлений
+                let displayContent = data.msg;
+                if (data.msg_type === 'voice') displayContent = '🎤 Голосовое сообщение';
+                else if (data.msg_type === 'video_note') displayContent = '📹 Видео-сообщение';
+                else if (data.msg_type === 'sticker') displayContent = '🎨 Стикер';
+                else if (data.msg_type === 'file') {
+                    try {
+                        const fInfo = JSON.parse(data.msg);
+                        displayContent = '📁 Файл: ' + (fInfo.name || 'вложение');
+                    } catch(e) { displayContent = '📁 Файл'; }
+                }
+
+                triggerSystemNotification(data.sender, displayContent);
 
                 if (data.target !== currentTarget && data.sender !== currentTarget) {
                     const chatKey = data.target.startsWith('#') ? data.target : data.sender;
@@ -1220,6 +1342,8 @@ HTML_TEMPLATE = """
                 box.appendChild(div);
             }
 
+            attachSwipeToMessage(div, msg.id);
+
             let replyHtml = msg.reply_text ? `<div class="reply-preview-box">${msg.reply_text}</div>` : '';
             let contentHtml = `<span>${msg.msg}</span>`;
             if (msg.msg_type === 'file') {
@@ -1234,7 +1358,7 @@ HTML_TEMPLATE = """
             } else if (msg.msg_type === 'voice') {
                 contentHtml = `<audio controls playsinline src="data:audio/webm;base64,${msg.msg}" style="height:32px; width:170px;"></audio>`;
             } else if (msg.msg_type === 'video_note') {
-                contentHtml = `<video class="video-note" controls playsinline src="data:video/webm;base64,${msg.msg}"></video>`;
+                contentHtml = `<video class="video-note" controls playsinline src="data:video/webm;base64,${msg.msg}" onclick="openVideoLightbox(this.src)"></video>`;
             } else if (msg.msg_type === 'sticker') {
                 contentHtml = `<img src="${msg.msg}" class="sticker-img">`;
             }
@@ -1354,6 +1478,15 @@ HTML_TEMPLATE = """
             document.getElementById('call-status-text').innerText = 'Входящий звонок...';
             document.getElementById('accept-call-btn').style.display = 'inline-block';
             setAvatarElement(document.getElementById('call-user-avatar'), data.caller);
+        });
+
+        socket.on('call_failed', (data) => {
+            if (data.reason === 'offline') {
+                document.getElementById('call-status-text').innerText = 'Пользователь не в сети. Оставлен пропущенный звонок.';
+                setTimeout(() => {
+                    endCallLocal();
+                }, 2000);
+            }
         });
 
         async function acceptCall() {
@@ -1607,6 +1740,22 @@ HTML_TEMPLATE = """
 
         function openProfileModal() { document.getElementById('profile-modal').style.display = 'flex'; }
         function closeProfileModal() { document.getElementById('profile-modal').style.display = 'none'; }
+
+        socket.on('disconnect', (reason) => {
+            if (reason === "io server disconnect" || reason === "transport close") {
+                socket.connect();
+            }
+        });
+
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') {
+                if (!socket.connected) socket.connect();
+                if (currentUser) {
+                    socket.emit('get_users');
+                    if (currentTarget) socket.emit('load_history', { user: currentUser, target: currentTarget });
+                }
+            }
+        });
     </script>
 </body>
 </html>
@@ -1734,7 +1883,46 @@ def on_register(data):
     finally: conn.close()
 
 @socketio.on('call_start')
-def on_call_start(data): emit('incoming_call', data, room=data['target'])
+def on_call_start(data):
+    caller = data.get('caller')
+    target = data.get('target')
+    
+    # Проверка активности абонента (в сети / не в сети)
+    if target not in online_users:
+        conn, db_type = get_db()
+        cur = conn.cursor()
+        msg_text = "📞 Пропущенный звонок"
+        msg_type = "text"
+        
+        if db_type == 'postgres':
+            cur.execute("""
+                INSERT INTO messages (sender, target, message, msg_type) 
+                VALUES (%s, %s, %s, %s) RETURNING id
+            """, (caller, target, msg_text, msg_type))
+            msg_id = cur.fetchone()[0]
+        else:
+            cur.execute("""
+                INSERT INTO messages (sender, target, message, msg_type) 
+                VALUES (?, ?, ?, ?)
+            """, (caller, target, msg_text, msg_type))
+            msg_id = cur.lastrowid
+            
+        conn.commit()
+        conn.close()
+        
+        missed_msg = {
+            'id': msg_id,
+            'sender': caller,
+            'target': target,
+            'msg': msg_text,
+            'msg_type': msg_type,
+            'is_read': 0,
+            'is_edited': 0
+        }
+        emit('new_msg', missed_msg, room=request.sid)
+        emit('call_failed', {'target': target, 'reason': 'offline'}, room=request.sid)
+    else:
+        emit('incoming_call', data, room=target)
 
 @socketio.on('call_accept')
 def on_call_accept(data): emit('call_accepted', data, room=data['target'])
