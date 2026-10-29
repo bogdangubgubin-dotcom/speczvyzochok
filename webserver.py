@@ -406,8 +406,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             <h2>Спецзвязочок</h2>
             <input type="text" id="username" placeholder="Логин">
             <input type="password" id="password" placeholder="Пароль">
-            <button onclick="login()">Войти</button>
-            <button onclick="register()" style="background: transparent; border: 1px solid #1F6AA5;">Регистрация</button>
+            <button type="button" onclick="login()">Войти</button>
+            <button type="button" onclick="register()" style="background: transparent; border: 1px solid #1F6AA5;">Регистрация</button>
             <div id="status" style="margin-top:10px; font-size:13px; color:#ff5555;"></div>
         </div>
     </div>
@@ -633,7 +633,13 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     <audio id="direct-call-audio" autoplay playsinline style="display:none;"></audio>
 
 <script>
-const socket = io({reconnection:true, reconnectionAttempts:Infinity, reconnectionDelay:1000, reconnectionDelayMax:5000, timeout:20000});
+let socket;
+try {
+    socket = io({reconnection:true, reconnectionAttempts:Infinity, reconnectionDelay:1000, reconnectionDelayMax:5000, timeout:20000});
+} catch(e) {
+    console.error("SocketIO не загружен:", e);
+}
+
 let currentUser="", currentTarget="#general", userRole="user", activeRoomId=null, showRoleFlag=false, mySecretRole=null, editingMsgId=null, isMicOn=false, mediaStream=null, audioContext=null, analyser=null, micAnimFrame=null, peerConnections={}, mediaRecorder=null, videoRecorder=null, audioChunks=[], videoChunks=[], isRecording=false, isVideoRecording=false, activeReplyMsg=null, allLoadedMessages={}, userAvatarsMap={}, pinnedChats=JSON.parse(localStorage.getItem('pychat_pinned')||'[]'), unreadCounts={}, typingTimeout=null, swRegistration=null, activeCallPeer=null, directCallStream=null, incomingCallData=null;
 
 const iceServers={iceServers:[{urls:'stun:stun.l.google.com:19302'},{urls:'stun:stun1.l.google.com:19302'}]};
@@ -712,38 +718,48 @@ function setAvatarElement(e,u){
 
 window.addEventListener('DOMContentLoaded',()=>{
     const u=localStorage.getItem('pychat_user'), p=localStorage.getItem('pychat_pass');
-    if(u&&p) socket.emit('login',{username:u,password:p});
+    if(u&&p&&socket) socket.emit('login',{username:u,password:p});
 });
 
 function login(){
     const u=document.getElementById('username').value.trim(), p=document.getElementById('password').value.trim();
-    if(u&&p) socket.emit('login',{username:u,password:p});
+    if(!u || !p) {
+        document.getElementById('status').innerText = "Заполните логин и пароль!";
+        return;
+    }
+    if(socket) socket.emit('login',{username:u,password:p});
 }
 
 function register(){
     const u=document.getElementById('username').value.trim(), p=document.getElementById('password').value.trim();
-    if(u&&p) socket.emit('register',{username:u,password:p});
+    if(!u || !p) {
+        document.getElementById('status').innerText = "Заполните логин и пароль!";
+        return;
+    }
+    if(socket) socket.emit('register',{username:u,password:p});
 }
 
 function logout(){ localStorage.clear(); location.reload(); }
 
-socket.on('auth_response',d=>{
-    if(d.status==='ok'){
-        currentUser=d.username; userRole=d.role;
-        localStorage.setItem('pychat_user',currentUser);
-        localStorage.setItem('pychat_pass',document.getElementById('password').value||localStorage.getItem('pychat_pass'));
-        document.getElementById('auth-screen').style.display='none';
-        document.getElementById('app-screen').style.display='flex';
-        document.getElementById('user-display').innerText=currentUser;
-        document.getElementById('admin-btn').style.display=(userRole==='admin'||currentUser==='totr')?'inline-block':'none';
-        if(d.avatar) userAvatarsMap[currentUser]=d.avatar;
-        setAvatarElement(document.getElementById('my-avatar'),currentUser);
-        setAvatarElement(document.getElementById('profile-big-avatar'),currentUser);
-        socket.emit('get_channels'); socket.emit('get_users'); switchChat('#general');
-    } else {
-        document.getElementById('status').innerText=d.message;
-    }
-});
+if(socket) {
+    socket.on('auth_response',d=>{
+        if(d.status==='ok'){
+            currentUser=d.username; userRole=d.role;
+            localStorage.setItem('pychat_user',currentUser);
+            localStorage.setItem('pychat_pass',document.getElementById('password').value||localStorage.getItem('pychat_pass'));
+            document.getElementById('auth-screen').style.display='none';
+            document.getElementById('app-screen').style.display='flex';
+            document.getElementById('user-display').innerText=currentUser;
+            document.getElementById('admin-btn').style.display=(userRole==='admin'||currentUser==='totr')?'inline-block':'none';
+            if(d.avatar) userAvatarsMap[currentUser]=d.avatar;
+            setAvatarElement(document.getElementById('my-avatar'),currentUser);
+            setAvatarElement(document.getElementById('profile-big-avatar'),currentUser);
+            socket.emit('get_channels'); socket.emit('get_users'); switchChat('#general');
+        } else {
+            document.getElementById('status').innerText=d.message;
+        }
+    });
+}
 
 function createChannelPrompt(){
     const n=prompt("Введите имя канала (#):");
@@ -764,14 +780,16 @@ function uploadAvatar(){
     r.readAsDataURL(f);
 }
 
-socket.on('avatar_updated',d=>{
-    userAvatarsMap[d.user]=d.avatar;
-    if(d.user===currentUser){
-        setAvatarElement(document.getElementById('my-avatar'),currentUser);
-        setAvatarElement(document.getElementById('profile-big-avatar'),currentUser);
-    }
-    socket.emit('get_users');
-});
+if(socket) {
+    socket.on('avatar_updated',d=>{
+        userAvatarsMap[d.user]=d.avatar;
+        if(d.user===currentUser){
+            setAvatarElement(document.getElementById('my-avatar'),currentUser);
+            setAvatarElement(document.getElementById('profile-big-avatar'),currentUser);
+        }
+        socket.emit('get_users');
+    });
+}
 
 function toggleSidebar(){ document.getElementById('sidebar').classList.toggle('open'); document.getElementById('sidebar-overlay').classList.toggle('active'); }
 function closeSidebar(){ document.getElementById('sidebar').classList.remove('open'); document.getElementById('sidebar-overlay').classList.remove('active'); }
@@ -781,60 +799,68 @@ function switchChat(t){
     document.getElementById('chat-title').innerText=isG?t:(t===currentUser?'📁 Избранное':'@'+t);
     document.getElementById('call-btn').style.display=(!isG&&t!==currentUser)?'inline-block':'none';
     document.getElementById('messages').innerHTML=''; closeSidebar();
-    socket.emit('load_history',{user:currentUser,target:currentTarget});
-    socket.emit('get_users');
+    if(socket) {
+        socket.emit('load_history',{user:currentUser,target:currentTarget});
+        socket.emit('get_users');
+    }
 }
 
-socket.on('history_loaded',d=>{
-    document.getElementById('messages').innerHTML=''; allLoadedMessages={};
-    d.messages.forEach(m=>appendMessage(m));
-    if(d.pinned_msg) showPinnedMsg(d.pinned_msg); else document.getElementById('pinned-bar').style.display='none';
-    socket.emit('mark_read',{user:currentUser,target:currentTarget});
-});
+if(socket) {
+    socket.on('history_loaded',d=>{
+        document.getElementById('messages').innerHTML=''; allLoadedMessages={};
+        d.messages.forEach(m=>appendMessage(m));
+        if(d.pinned_msg) showPinnedMsg(d.pinned_msg); else document.getElementById('pinned-bar').style.display='none';
+        socket.emit('mark_read',{user:currentUser,target:currentTarget});
+    });
+}
 
 function showPinnedMsg(t){ document.getElementById('pinned-msg-text').innerText=t; document.getElementById('pinned-bar').style.display='flex'; }
 function pinMsg(id){ const m=allLoadedMessages[id]; if(m) socket.emit('pin_msg',{target:currentTarget,msg:m.sender+': '+m.msg}); }
 function unpinMsg(){ socket.emit('pin_msg',{target:currentTarget,msg:''}); }
 
-socket.on('update_pinned',d=>{
-    if(d.target===currentTarget){
-        if(d.msg) showPinnedMsg(d.msg); else document.getElementById('pinned-bar').style.display='none';
-    }
-});
+if(socket) {
+    socket.on('update_pinned',d=>{
+        if(d.target===currentTarget){
+            if(d.msg) showPinnedMsg(d.msg); else document.getElementById('pinned-bar').style.display='none';
+        }
+    });
+}
 
 function togglePinChat(t){
     if(pinnedChats.includes(t)) pinnedChats=pinnedChats.filter(c=>c!==t); else pinnedChats.push(t);
     localStorage.setItem('pychat_pinned',JSON.stringify(pinnedChats));
-    socket.emit('get_channels'); socket.emit('get_users');
+    if(socket) { socket.emit('get_channels'); socket.emit('get_users'); }
 }
 
-socket.on('channels_list',d=>{
-    const l=document.getElementById('channels-list'); l.innerHTML='';
-    [...d.channels].sort((a,b)=>pinnedChats.includes(b.name)-pinnedChats.includes(a.name)).forEach(c=>{
-        const div=document.createElement('div');
-        div.className='chat-item'+(c.name===currentTarget?' active':'')+(pinnedChats.includes(c.name)?' pinned-chat':'');
-        div.innerHTML='<span>'+c.name+'</span>'+((unreadCounts[c.name]||0)>0?'<span class="unread-badge">'+unreadCounts[c.name]+'</span>':'')+'<button onclick="event.stopPropagation();togglePinChat(\''+c.name+'\')" style="width:auto;background:transparent;padding:0;border:none;font-size:12px;margin-left:4px;">📌</button>';
-        div.onclick=()=>switchChat(c.name); l.appendChild(div);
+if(socket) {
+    socket.on('channels_list',d=>{
+        const l=document.getElementById('channels-list'); l.innerHTML='';
+        [...d.channels].sort((a,b)=>pinnedChats.includes(b.name)-pinnedChats.includes(a.name)).forEach(c=>{
+            const div=document.createElement('div');
+            div.className='chat-item'+(c.name===currentTarget?' active':'')+(pinnedChats.includes(c.name)?' pinned-chat':'');
+            div.innerHTML='<span>'+c.name+'</span>'+((unreadCounts[c.name]||0)>0?'<span class="unread-badge">'+unreadCounts[c.name]+'</span>':'')+'<button onclick="event.stopPropagation();togglePinChat(\''+c.name+'\')" style="width:auto;background:transparent;padding:0;border:none;font-size:12px;margin-left:4px;">📌</button>';
+            div.onclick=()=>switchChat(c.name); l.appendChild(div);
+        });
     });
-});
 
-socket.on('users_list',d=>{
-    const l=document.getElementById('users-list'); l.innerHTML='';
-    const s=document.createElement('div'); s.className='chat-item'+(currentTarget===currentUser?' active':'');
-    s.innerHTML='<div class="avatar" style="background:#3B8ED0;">📁</div><span>Избранное</span>';
-    s.onclick=()=>switchChat(currentUser); l.appendChild(s);
-    [...d.users].sort((a,b)=>pinnedChats.includes(b.username)-pinnedChats.includes(a.username)).forEach(u=>{
-        if(u.avatar) userAvatarsMap[u.username]=u.avatar;
-        if(u.username===currentUser) return;
-        if(u.username===currentTarget) document.getElementById('user-last-seen').innerText=u.online?'🟢 В сети':'Был(а) в сети: '+(u.last_seen?new Date(u.last_seen*1000).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}):'недавно');
-        const div=document.createElement('div');
-        div.className='chat-item'+(u.username===currentTarget?' active':'')+(pinnedChats.includes(u.username)?' pinned-chat':'');
-        const av=document.createElement('div'); av.className='avatar'; setAvatarElement(av,u.username);
-        div.appendChild(av);
-        div.innerHTML+='<span>'+u.username+'</span><span class="status-dot '+(u.online?'online':'offline')+'"></span>'+((unreadCounts[u.username]||0)>0?'<span class="unread-badge">'+unreadCounts[u.username]+'</span>':'')+'<button onclick="event.stopPropagation();togglePinChat(\''+u.username+'\')" style="width:auto;background:transparent;padding:0;border:none;font-size:12px;margin-left:4px;">📌</button>';
-        div.onclick=()=>switchChat(u.username); l.appendChild(div);
+    socket.on('users_list',d=>{
+        const l=document.getElementById('users-list'); l.innerHTML='';
+        const s=document.createElement('div'); s.className='chat-item'+(currentTarget===currentUser?' active':'');
+        s.innerHTML='<div class="avatar" style="background:#3B8ED0;">📁</div><span>Избранное</span>';
+        s.onclick=()=>switchChat(currentUser); l.appendChild(s);
+        [...d.users].sort((a,b)=>pinnedChats.includes(b.username)-pinnedChats.includes(a.username)).forEach(u=>{
+            if(u.avatar) userAvatarsMap[u.username]=u.avatar;
+            if(u.username===currentUser) return;
+            if(u.username===currentTarget) document.getElementById('user-last-seen').innerText=u.online?'🟢 В сети':'Был(а) в сети: '+(u.last_seen?new Date(u.last_seen*1000).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}):'недавно');
+            const div=document.createElement('div');
+            div.className='chat-item'+(u.username===currentTarget?' active':'')+(pinnedChats.includes(u.username)?' pinned-chat':'');
+            const av=document.createElement('div'); av.className='avatar'; setAvatarElement(av,u.username);
+            div.appendChild(av);
+            div.innerHTML+='<span>'+u.username+'</span><span class="status-dot '+(u.online?'online':'offline')+'"></span>'+((unreadCounts[u.username]||0)>0?'<span class="unread-badge">'+unreadCounts[u.username]+'</span>':'')+'<button onclick="event.stopPropagation();togglePinChat(\''+u.username+'\')" style="width:auto;background:transparent;padding:0;border:none;font-size:12px;margin-left:4px;">📌</button>';
+            div.onclick=()=>switchChat(u.username); l.appendChild(div);
+        });
     });
-});
+}
 
 function openUserInfoModal(u){
     document.getElementById('info-user-name').innerText=u;
@@ -866,14 +892,16 @@ function closeGalleryModal(){ document.getElementById('gallery-modal').style.dis
 function openAdminModal(){ if(userRole!=='admin'&&currentUser!=='totr') return; document.getElementById('admin-modal').style.display='flex'; socket.emit('admin_get_users'); }
 function closeAdminModal(){ document.getElementById('admin-modal').style.display='none'; }
 
-socket.on('admin_users_data',d=>{
-    const c=document.getElementById('admin-users-list'); c.innerHTML='';
-    d.users.forEach(u=>{
-        const r=document.createElement('div'); r.className='admin-user-row';
-        r.innerHTML='<div><b>'+u.username+'</b> <span style="font-size:11px;color:#aaa;">('+u.role+')</span></div><div style="display:flex;gap:6px;"><button onclick="adminSetRole(\''+u.username+'\',\''+(u.role==='admin'?'user':'admin')+'\')" style="width:auto;padding:4px 8px;font-size:11px;background:#1F6AA5;">'+(u.role==='admin'?'User':'Admin')+'</button>'+(u.username!==currentUser?'<button onclick="adminDeleteUser(\''+u.username+'\')" style="width:auto;padding:4px 8px;font-size:11px;background:#d32f2f;">Удалить</button>':'')+'</div>';
-        c.appendChild(r);
+if(socket) {
+    socket.on('admin_users_data',d=>{
+        const c=document.getElementById('admin-users-list'); c.innerHTML='';
+        d.users.forEach(u=>{
+            const r=document.createElement('div'); r.className='admin-user-row';
+            r.innerHTML='<div><b>'+u.username+'</b> <span style="font-size:11px;color:#aaa;">('+u.role+')</span></div><div style="display:flex;gap:6px;"><button onclick="adminSetRole(\''+u.username+'\',\''+(u.role==='admin'?'user':'admin')+'\')" style="width:auto;padding:4px 8px;font-size:11px;background:#1F6AA5;">'+(u.role==='admin'?'User':'Admin')+'</button>'+(u.username!==currentUser?'<button onclick="adminDeleteUser(\''+u.username+'\')" style="width:auto;padding:4px 8px;font-size:11px;background:#d32f2f;">Удалить</button>':'')+'</div>';
+            c.appendChild(r);
+        });
     });
-});
+}
 
 function adminSetRole(u,r){ socket.emit('admin_change_role',{admin:currentUser,target_user:u,role:r}); }
 function adminDeleteUser(u){ if(confirm("Удалить "+u+"?")) socket.emit('admin_delete_user',{admin:currentUser,target_user:u}); }
@@ -883,21 +911,26 @@ function changePassword(){
     if(o&&n) socket.emit('change_password',{user:currentUser,old_pass:o,new_pass:n});
 }
 
-socket.on('pass_response',d=>{
-    const s=document.getElementById('pass-status'); s.innerText=d.message; s.style.color=d.status==='ok'?'#4caf50':'#ff5555';
-    if(d.status==='ok'){
-        localStorage.setItem('pychat_pass',document.getElementById('new-pass').value.trim());
-        document.getElementById('old-pass').value=''; document.getElementById('new-pass').value='';
-    }
-});
+if(socket) {
+    socket.on('pass_response',d=>{
+        const s=document.getElementById('pass-status'); s.innerText=d.message; s.style.color=d.status==='ok'?'#4caf50':'#ff5555';
+        if(d.status==='ok'){
+            localStorage.setItem('pychat_pass',document.getElementById('new-pass').value.trim());
+            document.getElementById('old-pass').value=''; document.getElementById('new-pass').value='';
+        }
+    });
+}
 
 function notifyTyping(){ socket.emit('user_typing',{sender:currentUser,target:currentTarget}); }
-socket.on('display_typing',d=>{
-    if(d.target===currentTarget||d.sender===currentTarget){
-        const i=document.getElementById('typing-indicator'); i.innerText=d.sender+' печатает...';
-        clearTimeout(typingTimeout); typingTimeout=setTimeout(()=>{i.innerText='';},3000);
-    }
-});
+
+if(socket) {
+    socket.on('display_typing',d=>{
+        if(d.target===currentTarget||d.sender===currentTarget){
+            const i=document.getElementById('typing-indicator'); i.innerText=d.sender+' печатает...';
+            clearTimeout(typingTimeout); typingTimeout=setTimeout(()=>{i.innerText='';},3000);
+        }
+    });
+}
 
 function toggleEmojiPicker(){ const p=document.getElementById('emoji-picker'); p.style.display=p.style.display==='block'?'none':'block'; }
 function switchPickerTab(t){ document.getElementById('tab-emoji').style.display=t==='emoji'?'grid':'none'; document.getElementById('tab-stickers').style.display=t==='stickers'?'flex':'none'; }
@@ -918,7 +951,7 @@ function sendMsg(){
 }
 
 function startEditMsg(id){ const m=allLoadedMessages[id]; if(m){ editingMsgId=id; document.getElementById('msg-input').value=m.msg; document.getElementById('send-btn').innerText='✓'; } }
-socket.on('msg_edited',d=>{ if(allLoadedMessages[d.msg_id]){ allLoadedMessages[d.msg_id].msg=d.new_text; allLoadedMessages[d.msg_id].is_edited=1; appendMessage(allLoadedMessages[d.msg_id]); } });
+if(socket) { socket.on('msg_edited',d=>{ if(allLoadedMessages[d.msg_id]){ allLoadedMessages[d.msg_id].msg=d.new_text; allLoadedMessages[d.msg_id].is_edited=1; appendMessage(allLoadedMessages[d.msg_id]); } }); }
 function cancelReply(){ activeReplyMsg=null; document.getElementById('reply-bar').style.display='none'; }
 
 function sendFile(){
@@ -957,7 +990,7 @@ async function toggleVideoNoteRecord(){
             videoRecorder.ondataavailable=e=>videoChunks.push(e.data);
             videoRecorder.onstop=()=>{
                 const r=new FileReader(); r.onloadend=()=>socket.emit('send_msg',{sender:currentUser,target:currentTarget,msg:r.result.split(',')[1],msg_type:'video_note'});
-                r.readAsDataURL(new Blob(videoChunks,{type:'video/webm'}));
+                r.readAsDataURL(new Blob(videoChunks,{type:'audio/webm'}));
                 s.getTracks().forEach(t=>t.stop());
             };
             videoRecorder.start(); isVideoRecording=true; b.classList.add('recording');
@@ -967,20 +1000,22 @@ async function toggleVideoNoteRecord(){
     }
 }
 
-socket.on('new_msg',d=>{
-    if(d.sender!==currentUser){
-        playNotificationSound(); triggerSystemNotification(d.sender,d.msg);
-        if(d.target!==currentTarget&&d.sender!==currentTarget){
-            const k=d.target.startsWith('#')?d.target:d.sender; unreadCounts[k]=(unreadCounts[k]||0)+1;
-            socket.emit('get_channels'); socket.emit('get_users');
+if(socket) {
+    socket.on('new_msg',d=>{
+        if(d.sender!==currentUser){
+            playNotificationSound(); triggerSystemNotification(d.sender,d.msg);
+            if(d.target!==currentTarget&&d.sender!==currentTarget){
+                const k=d.target.startsWith('#')?d.target:d.sender; unreadCounts[k]=(unreadCounts[k]||0)+1;
+                socket.emit('get_channels'); socket.emit('get_users');
+            }
         }
-    }
-    if(d.target===currentTarget||d.sender===currentTarget||(d.target.startsWith('#')&&d.target===currentTarget)){
-        appendMessage(d); socket.emit('mark_read',{user:currentUser,target:currentTarget});
-    }
-});
+        if(d.target===currentTarget||d.sender===currentTarget||(d.target.startsWith('#')&&d.target===currentTarget)){
+            appendMessage(d); socket.emit('mark_read',{user:currentUser,target:currentTarget});
+        }
+    });
 
-socket.on('messages_read',d=>{ if(d.target===currentUser||d.user===currentTarget) document.querySelectorAll('.msg-status').forEach(s=>s.innerText='✓✓'); });
+    socket.on('messages_read',d=>{ if(d.target===currentUser||d.user===currentTarget) document.querySelectorAll('.msg-status').forEach(s=>s.innerText='✓✓'); });
+}
 
 function appendMessage(m){
     allLoadedMessages[m.id]=m; let div=document.getElementById('msg-elem-'+m.id);
@@ -1019,9 +1054,9 @@ function appendMessage(m){
 
 function setReplyMsg(id){ const m=allLoadedMessages[id]; if(m){ activeReplyMsg=m; document.getElementById('reply-text').innerText='Ответ для '+m.sender+': '+m.msg; document.getElementById('reply-bar').style.display='flex'; } }
 function addReaction(id,e){ socket.emit('add_reaction',{msg_id:id,emoji:e,user:currentUser}); }
-socket.on('update_msg_reactions',d=>{ if(allLoadedMessages[d.msg_id]){ allLoadedMessages[d.msg_id].reactions=JSON.stringify(d.reactions); appendMessage(allLoadedMessages[d.msg_id]); } });
+if(socket) { socket.on('update_msg_reactions',d=>{ if(allLoadedMessages[d.msg_id]){ allLoadedMessages[d.msg_id].reactions=JSON.stringify(d.reactions); appendMessage(allLoadedMessages[d.msg_id]); } }); }
 function deleteMessage(id){ socket.emit('delete_msg',{msg_id:id,user:currentUser}); }
-socket.on('msg_deleted',d=>{ const e=document.getElementById('msg-elem-'+d.msg_id); if(e) e.remove(); });
+if(socket) { socket.on('msg_deleted',d=>{ const e=document.getElementById('msg-elem-'+d.msg_id); if(e) e.remove(); }); }
 function searchMessages(){ const q=document.getElementById('search-input').value.toLowerCase(); document.querySelectorAll('.message').forEach(d=>{ d.style.display=d.innerText.toLowerCase().includes(q)?'flex':'none'; }); }
 
 async function startDirectCall(){
@@ -1042,13 +1077,15 @@ async function startDirectCall(){
     } catch(e){ alert('Микрофон недоступен!'); endCall(); }
 }
 
-socket.on('incoming_call',d=>{
-    incomingCallData=d; document.getElementById('call-modal').style.display='flex';
-    document.getElementById('call-user-name').innerText='@'+d.caller;
-    document.getElementById('call-status-text').innerText='Входящий звонок...';
-    document.getElementById('accept-call-btn').style.display='inline-block';
-    setAvatarElement(document.getElementById('call-user-avatar'),d.caller);
-});
+if(socket) {
+    socket.on('incoming_call',d=>{
+        incomingCallData=d; document.getElementById('call-modal').style.display='flex';
+        document.getElementById('call-user-name').innerText='@'+d.caller;
+        document.getElementById('call-status-text').innerText='Входящий звонок...';
+        document.getElementById('accept-call-btn').style.display='inline-block';
+        setAvatarElement(document.getElementById('call-user-avatar'),d.caller);
+    });
+}
 
 async function acceptCall(){
     document.getElementById('accept-call-btn').style.display='none';
@@ -1065,11 +1102,13 @@ async function acceptCall(){
     } catch(e){ alert('Ошибка соединения!'); endCall(); }
 }
 
-socket.on('call_accepted',async d=>{ document.getElementById('call-status-text').innerText='Разговор...'; if(activeCallPeer) await activeCallPeer.setRemoteDescription(new RTCSessionDescription(d.answer)); });
-socket.on('call_signal',async d=>{ if(activeCallPeer&&d.candidate) await activeCallPeer.addIceCandidate(new RTCIceCandidate(d.candidate)); });
-socket.on('call_ended',()=>{ endCallLocal(); });
+if(socket) {
+    socket.on('call_accepted',async d=>{ document.getElementById('call-status-text').innerText='Разговор...'; if(activeCallPeer) await activeCallPeer.setRemoteDescription(new RTCSessionDescription(d.answer)); });
+    socket.on('call_signal',async d=>{ if(activeCallPeer&&d.candidate) await activeCallPeer.addIceCandidate(new RTCIceCandidate(d.candidate)); });
+    socket.on('call_ended',()=>{ endCallLocal(); });
+}
 
-function endCall(){ socket.emit('call_end',{target:incomingCallData?incomingCallData.caller:currentTarget}); endCallLocal(); }
+function endCall(){ if(socket) socket.emit('call_end',{target:incomingCallData?incomingCallData.caller:currentTarget}); endCallLocal(); }
 function endCallLocal(){
     if(directCallStream) directCallStream.getTracks().forEach(t=>t.stop());
     if(activeCallPeer) activeCallPeer.close();
@@ -1079,11 +1118,11 @@ function endCallLocal(){
 
 function openMafiaModal(){ closeProfileModal(); document.getElementById('mafia-modal').style.display='flex'; backToMafiaRooms(); }
 function closeMafiaModal(){ document.getElementById('mafia-modal').style.display='none'; }
-function backToMafiaRooms(){ if(activeRoomId) leaveActiveRoom(); activeRoomId=null; document.getElementById('mafia-rooms-screen').style.display='block'; document.getElementById('mafia-gameplay-screen').style.display='none'; socket.emit('mafia_get_rooms'); }
-function enterMafiaRoom(r){ activeRoomId=r; document.getElementById('mafia-rooms-screen').style.display='none'; document.getElementById('mafia-gameplay-screen').style.display='block'; socket.emit('mafia_get_room_state',{room_id:activeRoomId}); }
-function joinActiveRoom(){ socket.emit('mafia_join',{room_id:activeRoomId,user:currentUser}); }
-function leaveActiveRoom(){ stopMicMeter(); socket.emit('mafia_leave',{room_id:activeRoomId,user:currentUser}); }
-function startActiveRoomGame(){ socket.emit('mafia_start',{room_id:activeRoomId}); }
+function backToMafiaRooms(){ if(activeRoomId) leaveActiveRoom(); activeRoomId=null; document.getElementById('mafia-rooms-screen').style.display='block'; document.getElementById('mafia-gameplay-screen').style.display='none'; if(socket) socket.emit('mafia_get_rooms'); }
+function enterMafiaRoom(r){ activeRoomId=r; document.getElementById('mafia-rooms-screen').style.display='none'; document.getElementById('mafia-gameplay-screen').style.display='block'; if(socket) socket.emit('mafia_get_room_state',{room_id:activeRoomId}); }
+function joinActiveRoom(){ if(socket) socket.emit('mafia_join',{room_id:activeRoomId,user:currentUser}); }
+function leaveActiveRoom(){ stopMicMeter(); if(socket) socket.emit('mafia_leave',{room_id:activeRoomId,user:currentUser}); }
+function startActiveRoomGame(){ if(socket) socket.emit('mafia_start',{room_id:activeRoomId}); }
 function toggleRoleShow(){ showRoleFlag=!showRoleFlag; document.getElementById('my-role-text').innerText=showRoleFlag?(mySecretRole||'Нет роли'):'Скрыта'; }
 
 async function toggleMic(){
@@ -1092,7 +1131,7 @@ async function toggleMic(){
         try {
             mediaStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true}});
             b.innerText='🎙️ Микрофон ВКЛ'; b.style.background='#388e3c'; startMicMeter(mediaStream);
-            socket.emit('webrtc_join',{room_id:activeRoomId,user:currentUser});
+            if(socket) socket.emit('webrtc_join',{room_id:activeRoomId,user:currentUser});
         } catch(e){ alert('Ошибка!'); isMicOn=false; }
     } else {
         stopMicMeter(); b.innerText='🔇 Микрофон ВЫКЛ'; b.style.background='#c62828';
@@ -1117,7 +1156,7 @@ function createPeer(s){
     if(peerConnections[s]) return peerConnections[s];
     const pc=new RTCPeerConnection(iceServers); peerConnections[s]=pc;
     if(mediaStream) mediaStream.getTracks().forEach(t=>pc.addTrack(t,mediaStream));
-    pc.onicecandidate=e=>{ if(e.candidate) socket.emit('webrtc_signal',{target_sid:s,candidate:e.candidate}); };
+    pc.onicecandidate=e=>{ if(e.candidate&&socket) socket.emit('webrtc_signal',{target_sid:s,candidate:e.candidate}); };
     pc.ontrack=e=>{
         let a=document.getElementById('audio-'+s);
         if(!a){ a=document.createElement('audio'); a.id='audio-'+s; a.autoplay=true; a.playsInline=true; document.getElementById('audio-peers-container').appendChild(a); }
@@ -1126,13 +1165,15 @@ function createPeer(s){
     return pc;
 }
 
-socket.on('webrtc_user_joined',async d=>{ if(d.sid===socket.id) return; const pc=createPeer(d.sid), o=await pc.createOffer(); await pc.setLocalDescription(o); socket.emit('webrtc_signal',{target_sid:d.sid,offer:o}); });
-socket.on('webrtc_signal',async d=>{
-    const s=d.sender_sid; if(s===socket.id) return; const pc=createPeer(s);
-    if(d.offer){ await pc.setRemoteDescription(new RTCSessionDescription(d.offer)); const a=await pc.createAnswer(); await pc.setLocalDescription(a); socket.emit('webrtc_signal',{target_sid:s,answer:a}); }
-    else if(d.answer) await pc.setRemoteDescription(new RTCSessionDescription(d.answer));
-    else if(d.candidate) await pc.addIceCandidate(new RTCIceCandidate(d.candidate));
-});
+if(socket) {
+    socket.on('webrtc_user_joined',async d=>{ if(d.sid===socket.id) return; const pc=createPeer(d.sid), o=await pc.createOffer(); await pc.setLocalDescription(o); socket.emit('webrtc_signal',{target_sid:d.sid,offer:o}); });
+    socket.on('webrtc_signal',async d=>{
+        const s=d.sender_sid; if(s===socket.id) return; const pc=createPeer(s);
+        if(d.offer){ await pc.setRemoteDescription(new RTCSessionDescription(d.offer)); const a=await pc.createAnswer(); await pc.setLocalDescription(a); socket.emit('webrtc_signal',{target_sid:s,answer:a}); }
+        else if(d.answer) await pc.setRemoteDescription(new RTCSessionDescription(d.answer));
+        else if(d.candidate) await pc.addIceCandidate(new RTCIceCandidate(d.candidate));
+    });
+}
 
 function stopMicMeter(){
     if(micAnimFrame) cancelAnimationFrame(micAnimFrame);
@@ -1143,62 +1184,67 @@ function stopMicMeter(){
     const mb=document.getElementById('meter-box-'+currentUser); if(mb) mb.style.display='none';
 }
 
-socket.on('mafia_rooms_list',d=>{
-    const c=document.getElementById('mafia-rooms-container'); c.innerHTML='';
-    for(const[r,info] of Object.entries(d.rooms)){
-        const it=document.createElement('div'); it.className='room-item';
-        it.innerHTML='<div><div class="room-title">'+info.name+'</div><div class="room-info">Игроков: '+info.count+'/6 | '+info.state.toUpperCase()+'</div></div><button style="width:auto;padding:6px 14px;" onclick="enterMafiaRoom(\''+r+'\')">Войти</button>';
-        c.appendChild(it);
-    }
-});
-
-socket.on('mafia_room_update',d=>{
-    if(d.room_id!==activeRoomId) return;
-    document.getElementById('mafia-modal-title').innerText='🕵️ '+d.name;
-    document.getElementById('room-phase-badge').innerText=d.state.toUpperCase();
-    const tb=document.getElementById('mafia-timer-badge');
-    if(d.timer_end>0){ tb.innerText='⏱ '+Math.max(0,d.timer_end-Math.floor(Date.now()/1000))+'s'; tb.style.display='inline-block'; }
-    else tb.style.display='none';
-
-    if(d.players[currentUser]){
-        mySecretRole=d.players[currentUser].role;
-        document.getElementById('join-room-btn').style.display='none';
-        document.getElementById('leave-room-btn').style.display='inline-block';
-    } else {
-        document.getElementById('join-room-btn').style.display='inline-block';
-        document.getElementById('leave-room-btn').style.display='none';
-    }
-
-    const tbl=document.getElementById('poker-table-slots'); tbl.innerHTML='';
-    const pBySlot={}; for(const[u,p] of Object.entries(d.players)) pBySlot[p.slot]={name:u,...p};
-
-    for(let s=0;s<6;s++){
-        const div=document.createElement('div');
-        if(pBySlot[s]){
-            const p=pBySlot[s]; div.className='table-slot occupied'; let act='';
-            if(p.alive&&p.name!==currentUser){
-                if(d.state==='night'&&mySecretRole==='mafia') act='<button class="act-btn" onclick="socket.emit(\'mafia_action\',{room_id:\''+activeRoomId+'\',user:\''+currentUser+'\',target:\''+p.name+'\',action:\'kill\'})">Убить</button>';
-                if(d.state==='day') act='<button class="act-btn" style="background:#f57c00;" onclick="socket.emit(\'mafia_action\',{room_id:\''+activeRoomId+'\',user:\''+currentUser+'\',target:\''+p.name+'\',action:\'vote\'})">Голос</button>';
-            }
-            const av=document.createElement('div'); av.className='slot-avatar'; setAvatarElement(av,p.name);
-            div.appendChild(av);
-            div.innerHTML+='<div class="slot-name">'+p.name+'</div><div class="audio-meter-box" id="meter-box-'+p.name+'"><div class="audio-meter-bar" id="meter-bar-'+p.name+'"></div></div><div class="slot-status">'+(p.alive?'🟢 Жив':'💀 Убит')+'</div>'+act;
-        } else {
-            div.className='table-slot'; div.innerHTML='<div class="slot-avatar" style="background:#333;color:#666;">+</div><div class="slot-name" style="color:#777;">Свободно</div>';
+if(socket) {
+    socket.on('mafia_rooms_list',d=>{
+        const c=document.getElementById('mafia-rooms-container'); c.innerHTML='';
+        for(const[r,info] of Object.entries(d.rooms)){
+            const it=document.createElement('div'); it.className='room-item';
+            it.innerHTML='<div><div class="room-title">'+info.name+'</div><div class="room-info">Игроков: '+info.count+'/6 | '+info.state.toUpperCase()+'</div></div><button style="width:auto;padding:6px 14px;" onclick="enterMafiaRoom(\''+r+'\')">Войти</button>';
+            c.appendChild(it);
         }
-        tbl.appendChild(div);
-    }
-    const lb=document.getElementById('room-logs-box'); lb.innerHTML=d.logs.join('<br>'); lb.scrollTop=lb.scrollHeight;
-});
+    });
+
+    socket.on('mafia_room_update',d=>{
+        if(d.room_id!==activeRoomId) return;
+        document.getElementById('mafia-modal-title').innerText='🕵️ '+d.name;
+        document.getElementById('room-phase-badge').innerText=d.state.toUpperCase();
+        const tb=document.getElementById('mafia-timer-badge');
+        if(d.timer_end>0){ tb.innerText='⏱ '+Math.max(0,d.timer_end-Math.floor(Date.now()/1000))+'s'; tb.style.display='inline-block'; }
+        else tb.style.display='none';
+
+        if(d.players[currentUser]){
+            mySecretRole=d.players[currentUser].role;
+            document.getElementById('join-room-btn').style.display='none';
+            document.getElementById('leave-room-btn').style.display='inline-block';
+        } else {
+            document.getElementById('join-room-btn').style.display='inline-block';
+            document.getElementById('leave-room-btn').style.display='none';
+        }
+
+        const tbl=document.getElementById('poker-table-slots'); tbl.innerHTML='';
+        const pBySlot={}; for(const[u,p] of Object.entries(d.players)) pBySlot[p.slot]={name:u,...p};
+
+        for(let s=0;s<6;s++){
+            const div=document.createElement('div');
+            if(pBySlot[s]){
+                const p=pBySlot[s]; div.className='table-slot occupied'; let act='';
+                if(p.alive&&p.name!==currentUser){
+                    if(d.state==='night'&&mySecretRole==='mafia') act='<button class="act-btn" onclick="socket.emit(\'mafia_action\',{room_id:\''+activeRoomId+'\',user:\''+currentUser+'\',target:\''+p.name+'\',action:\'kill\'})">Убить</button>';
+                    if(d.state==='day') act='<button class="act-btn" style="background:#f57c00;" onclick="socket.emit(\'mafia_action\',{room_id:\''+activeRoomId+'\',user:\''+currentUser+'\',target:\''+p.name+'\',action:\'vote\'})">Голос</button>';
+                }
+                const av=document.createElement('div'); av.className='slot-avatar'; setAvatarElement(av,p.name);
+                div.appendChild(av);
+                div.innerHTML+='<div class="slot-name">'+p.name+'</div><div class="audio-meter-box" id="meter-box-'+p.name+'"><div class="audio-meter-bar" id="meter-bar-'+p.name+'"></div></div><div class="slot-status">'+(p.alive?'🟢 Жив':'💀 Убит')+'</div>'+act;
+            } else {
+                div.className='table-slot'; div.innerHTML='<div class="slot-avatar" style="background:#333;color:#666;">+</div><div class="slot-name" style="color:#777;">Свободно</div>';
+            }
+            tbl.appendChild(div);
+        }
+        const lb=document.getElementById('room-logs-box'); lb.innerHTML=d.logs.join('<br>'); lb.scrollTop=lb.scrollHeight;
+    });
+}
 
 function openProfileModal(){ document.getElementById('profile-modal').style.display='flex'; }
 function closeProfileModal(){ document.getElementById('profile-modal').style.display='none'; }
 
-socket.on('disconnect',r=>{ if(r==='io server disconnect'||r==='transport close') socket.connect(); });
+if(socket) {
+    socket.on('disconnect',r=>{ if(r==='io server disconnect'||r==='transport close') socket.connect(); });
+}
+
 document.addEventListener('visibilitychange',()=>{
     if(document.visibilityState==='visible'){
-        if(!socket.connected) socket.connect();
-        if(currentUser){
+        if(socket && !socket.connected) socket.connect();
+        if(currentUser && socket){
             socket.emit('get_users');
             if(currentTarget) socket.emit('load_history',{user:currentUser,target:currentTarget});
         }
