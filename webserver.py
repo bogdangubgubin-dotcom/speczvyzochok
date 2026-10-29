@@ -8,14 +8,17 @@ import psycopg2
 import psycopg2.extras
 from flask import Flask, render_template_string, request
 from flask_socketio import SocketIO, emit, join_room, leave_room
+from pywebpush import webpush, WebPushException
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'speczvyazok_secret_key_2026'
 
-# Быстрый пинг для исключения задержек отправки сообщений
 socketio = SocketIO(app, cors_allowed_origins="*", max_http_buffer_size=25 * 1024 * 1024, async_mode=None, ping_timeout=10, ping_interval=5)
 
 DATABASE_URL = os.environ.get('DATABASE_URL')
+VAPID_PUBLIC_KEY = os.environ.get('VAPID_PUBLIC_KEY', '')
+VAPID_PRIVATE_KEY = os.environ.get('VAPID_PRIVATE_KEY', '')
+VAPID_CLAIM_EMAIL = os.environ.get('VAPID_CLAIM_EMAIL', 'mailto:admin@example.com')
 
 def get_db():
     if DATABASE_URL:
@@ -71,6 +74,13 @@ def init_db():
                 timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
         """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS push_subscriptions (
+                id SERIAL PRIMARY KEY,
+                username VARCHAR(255) NOT NULL,
+                subscription TEXT UNIQUE NOT NULL
+            );
+        """)
         cur.execute("UPDATE users SET role = 'admin' WHERE username = 'totr';")
     else:
         cur.execute("""
@@ -109,6 +119,13 @@ def init_db():
                 is_read INTEGER DEFAULT 0,
                 is_edited INTEGER DEFAULT 0,
                 timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS push_subscriptions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT NOT NULL,
+                subscription TEXT UNIQUE NOT NULL
             )
         """)
         cur.execute("UPDATE users SET role = 'admin' WHERE username = 'totr'")
@@ -234,6 +251,34 @@ class MafiaRoom:
 
 mafia_rooms = {f"room_{i}": MafiaRoom(f"room_{i}", f"Комната №{i}") for i in range(1, 6)}
 online_users = {}
+
+def send_web_push(username, title, body):
+    if not VAPID_PUBLIC_KEY or not VAPID_PRIVATE_KEY:
+        return
+    conn, db_type = get_db()
+    cur = conn.cursor()
+    if db_type == 'postgres':
+        cur.execute("SELECT subscription FROM push_subscriptions WHERE username = %s", (username,))
+    else:
+        cur.execute("SELECT subscription FROM push_subscriptions WHERE username = ?", (username,))
+    rows = cur.fetchall()
+    conn.close()
+
+    payload = json.dumps({'title': title, 'body': body})
+
+    for row in rows:
+        try:
+            sub_info = json.loads(row[0])
+            webpush(
+                subscription_info=sub_info,
+                data=payload,
+                vapid_private_key=VAPID_PRIVATE_KEY,
+                vapid_claims={"sub": VAPID_CLAIM_EMAIL}
+            )
+        except WebPushException as ex:
+            print("WebPush Error:", ex)
+        except Exception as e:
+            print("Push Exception:", e)
 
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -568,7 +613,7 @@ HTML_TEMPLATE = """
                     </label>
                 </div>
 
-                <button onclick="requestPushPermission()" style="background:#1F6AA5; margin-bottom:5px; padding:12px;">🔔 Разрешить Push-уведомления</button>
+                <button onclick="requestPushPermission()" style="background:#1F6AA5; margin-bottom:5px; padding:12px;">🔔 Разрешить Push-уведомления (Фон)</button>
                 <button onclick="toggleTheme()" style="background:#444; margin-bottom:5px;">🌗 Сменить тему оформления</button>
                 <button onclick="openMafiaModal()" style="background:#8e24aa; margin-bottom:10px; padding:12px;">🕵️ Игра «Мафия»</button>
 
@@ -687,6 +732,8 @@ HTML_TEMPLATE = """
         let directCallStream = null;
         let incomingCallData = null;
 
+        const VAPID_PUBLIC_KEY = "{{ vapid_public_key }}";
+
         const iceServers = { 
             iceServers: [
                 { urls: 'stun:stun.l.google.com:19302' },
@@ -700,7 +747,6 @@ HTML_TEMPLATE = """
             }).catch(e => console.log('SW error:', e));
         }
 
-        /* --- ГЛОБАЛЬНАЯ ОБРАБОТКА СВАЙПОВ ЭКРАНА (ОТКРЫТИЕ / ЗАКРЫТИЕ МЕНЮ) --- */
         let globalStartX = 0, globalStartY = 0;
 
         document.addEventListener('touchstart', (e) => {
@@ -720,18 +766,14 @@ HTML_TEMPLATE = """
                 const sidebar = document.getElementById('sidebar');
                 const isOpen = sidebar.classList.contains('open');
 
-                // Свайп слева направо от края экрана (до 40px) открывает боковую панель
                 if (!isOpen && globalStartX < 40 && diffX > 60) {
                     toggleSidebar();
-                }
-                // Свайп справа налево при открытом меню закрывает его
-                else if (isOpen && diffX < -60) {
+                } else if (isOpen && diffX < -60) {
                     closeSidebar();
                 }
             }
         });
 
-        /* --- СВАЙП НА СООБЩЕНИЯХ ДЛЯ БЫСТРОГО ОТВЕТА (REPLY) --- */
         function attachSwipeToMessage(elem, msgId) {
             let startX = 0, startY = 0, deltaX = 0, deltaY = 0;
             let isSwiping = false;
@@ -750,7 +792,6 @@ HTML_TEMPLATE = """
                 deltaX = e.touches[0].clientX - startX;
                 deltaY = e.touches[0].clientY - startY;
 
-                // Пропускаем вертикальный скролл
                 if (!isSwiping && Math.abs(deltaY) > Math.abs(deltaX)) return;
 
                 if (deltaX > 0 && deltaX < 120) {
@@ -770,12 +811,41 @@ HTML_TEMPLATE = """
             });
         }
 
-        function requestPushPermission() {
-            if ("Notification" in window) {
-                Notification.requestPermission().then(permission => {
-                    if (permission === "granted") alert("✅ Push-уведомления успешно разрешены!");
-                    else alert("⚠️ Доступ отклонен в настройках браузера.");
-                });
+        function urlBase64ToUint8Array(base64String) {
+            const padding = '='.repeat((4 - base64String.length % 4) % 4);
+            const base64 = (base64String + padding).replace(/\\-/g, '+').replace(/_/g, '/');
+            const rawData = window.atob(base64);
+            const outputArray = new Uint8Array(rawData.length);
+            for (let i = 0; i < rawData.length; ++i) {
+                outputArray[i] = rawData.charCodeAt(i);
+            }
+            return outputArray;
+        }
+
+        async function requestPushPermission() {
+            if (!("Notification" in window)) {
+                alert("Уведомления не поддерживаются вашим браузером");
+                return;
+            }
+            const permission = await Notification.requestPermission();
+            if (permission === "granted") {
+                try {
+                    const reg = await navigator.serviceWorker.ready;
+                    if (!VAPID_PUBLIC_KEY) {
+                        alert("⚠️ VAPID_PUBLIC_KEY не задан в Render Dashboard!");
+                        return;
+                    }
+                    const sub = await reg.pushManager.subscribe({
+                        userVisibleOnly: true,
+                        applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
+                    });
+                    socket.emit('save_push_subscription', { user: currentUser, subscription: sub });
+                    alert("✅ Фоновые Push-уведомления успешно включены!");
+                } catch(e) {
+                    alert("Ошибка подписки Push: " + e.message);
+                }
+            } else {
+                alert("⚠️ Доступ отклонен в настройках браузера.");
             }
         }
 
@@ -895,10 +965,6 @@ HTML_TEMPLATE = """
                 if (data.avatar) userAvatarsMap[currentUser] = data.avatar;
                 setAvatarElement(document.getElementById('my-avatar'), currentUser);
                 setAvatarElement(document.getElementById('profile-big-avatar'), currentUser);
-
-                if ("Notification" in window && Notification.permission === "default") {
-                    Notification.requestPermission();
-                }
 
                 socket.emit('get_channels');
                 socket.emit('get_users');
@@ -1295,7 +1361,6 @@ HTML_TEMPLATE = """
             if (data.sender !== currentUser) {
                 playNotificationSound();
 
-                // Читаемый формат сообщений для системных уведомлений
                 let displayContent = data.msg;
                 if (data.msg_type === 'voice') displayContent = '🎤 Голосовое сообщение';
                 else if (data.msg_type === 'video_note') displayContent = '📹 Видео-сообщение';
@@ -1442,7 +1507,6 @@ HTML_TEMPLATE = """
             });
         }
 
-        /* --- ГОЛОСОВЫЕ ЗВОНКИ 1-НА-1 --- */
         async function startDirectCall() {
             if (currentTarget.startsWith('#')) return;
             document.getElementById('call-modal').style.display = 'flex';
@@ -1537,7 +1601,6 @@ HTML_TEMPLATE = """
             document.getElementById('call-modal').style.display = 'none';
         }
 
-        /* --- WEBRTC И МАФИЯ --- */
         function openMafiaModal() {
             closeProfileModal();
             document.getElementById('mafia-modal').style.display = 'flex';
@@ -1762,7 +1825,8 @@ HTML_TEMPLATE = """
 """
 
 @app.route('/')
-def index(): return render_template_string(HTML_TEMPLATE)
+def index(): 
+    return render_template_string(HTML_TEMPLATE, vapid_public_key=VAPID_PUBLIC_KEY)
 
 @app.route('/manifest.json')
 def serve_manifest():
@@ -1799,6 +1863,21 @@ def serve_sw():
         e.respondWith(fetch(e.request));
     });
 
+    self.addEventListener('push', function(event) {
+        let data = {};
+        if (event.data) {
+            try { data = event.data.json(); } catch(e) { data = { title: 'Уведомление', body: event.data.text() }; }
+        }
+        const title = data.title || 'Новое сообщение';
+        const options = {
+            body: data.body || '',
+            icon: 'https://cdn-icons-png.flaticon.com/512/732/732200.png',
+            vibrate: [200, 100, 200],
+            data: { url: '/' }
+        };
+        event.waitUntil(self.registration.showNotification(title, options));
+    });
+
     self.addEventListener('notificationclick', function(event) {
         event.notification.close();
         event.waitUntil(
@@ -1830,6 +1909,30 @@ def on_disconnect():
             conn.close()
             on_get_users()
             break
+
+@socketio.on('save_push_subscription')
+def on_save_push_subscription(data):
+    username = data.get('user')
+    sub_json = json.dumps(data.get('subscription'))
+    if not username or not sub_json: return
+    conn, db_type = get_db()
+    cur = conn.cursor()
+    try:
+        if db_type == 'postgres':
+            cur.execute("""
+                INSERT INTO push_subscriptions (username, subscription) 
+                VALUES (%s, %s) ON CONFLICT (subscription) DO NOTHING
+            """, (username, sub_json))
+        else:
+            cur.execute("""
+                INSERT OR IGNORE INTO push_subscriptions (username, subscription) 
+                VALUES (?, ?)
+            """, (username, sub_json))
+        conn.commit()
+    except Exception as e:
+        print("Save push sub error:", e)
+    finally:
+        conn.close()
 
 @socketio.on('login')
 def on_login(data):
@@ -1887,7 +1990,6 @@ def on_call_start(data):
     caller = data.get('caller')
     target = data.get('target')
     
-    # Проверка активности абонента (в сети / не в сети)
     if target not in online_users:
         conn, db_type = get_db()
         cur = conn.cursor()
@@ -1921,6 +2023,9 @@ def on_call_start(data):
         }
         emit('new_msg', missed_msg, room=request.sid)
         emit('call_failed', {'target': target, 'reason': 'offline'}, room=request.sid)
+
+        # Отправляем фоновый Push пользователю вне сети
+        send_web_push(target, f"Звонок от {caller}", "Вам звонили (пропущенный вызов)")
     else:
         emit('incoming_call', data, room=target)
 
@@ -2178,10 +2283,21 @@ def on_send_msg(data):
     data['is_read'] = 0
     data['is_edited'] = 0
     target = data['target']
-    if target.startswith('#'): emit('new_msg', data, room=target)
+    
+    if target.startswith('#'):
+        emit('new_msg', data, room=target)
     else:
         emit('new_msg', data, room=target)
         if data['sender'] != target: emit('new_msg', data, room=data['sender'])
+
+        # Если получатель оффлайн, отправляем ему Web Push
+        if target not in online_users:
+            display_text = data['msg']
+            if data.get('msg_type') == 'voice': display_text = '🎤 Голосовое сообщение'
+            elif data.get('msg_type') == 'video_note': display_text = '📹 Видео-сообщение'
+            elif data.get('msg_type') == 'sticker': display_text = '🎨 Стикер'
+            elif data.get('msg_type') == 'file': display_text = '📁 Файл'
+            send_web_push(target, f"Сообщение от {data['sender']}", display_text)
 
 @socketio.on('edit_msg')
 def on_edit_msg(data):
@@ -2202,119 +2318,4 @@ def on_add_reaction(data):
     msg_id = data['msg_id']
     emoji = data['emoji']
     user = data['user']
-    conn, db_type = get_db()
-    cur = conn.cursor()
-    if db_type == 'postgres':
-        cur.execute("SELECT reactions FROM messages WHERE id = %s", (msg_id,))
-    else:
-        cur.execute("SELECT reactions FROM messages WHERE id = ?", (msg_id,))
-    row = cur.fetchone()
-
-    if row:
-        reactions = json.loads(row[0] or '{}')
-        if emoji not in reactions: reactions[emoji] = []
-        if user in reactions[emoji]: reactions[emoji].remove(user)
-        else: reactions[emoji].append(user)
-
-        if db_type == 'postgres':
-            cur.execute("UPDATE messages SET reactions = %s WHERE id = %s", (json.dumps(reactions), msg_id))
-        else:
-            cur.execute("UPDATE messages SET reactions = ? WHERE id = ?", (json.dumps(reactions), msg_id))
-        conn.commit()
-        conn.close()
-        emit('update_msg_reactions', {'msg_id': msg_id, 'reactions': reactions}, broadcast=True)
-
-@socketio.on('delete_msg')
-def on_delete_msg(data):
-    msg_id = data['msg_id']
-    conn, db_type = get_db()
-    cur = conn.cursor()
-    if db_type == 'postgres':
-        cur.execute("DELETE FROM messages WHERE id = %s", (msg_id,))
-    else:
-        cur.execute("DELETE FROM messages WHERE id = ?", (msg_id,))
-    conn.commit()
-    conn.close()
-    emit('msg_deleted', {'msg_id': msg_id}, broadcast=True)
-
-@socketio.on('webrtc_join')
-def on_webrtc_join(data):
-    room_id = data.get('room_id')
-    join_room(room_id)
-    emit('webrtc_user_joined', {'user': data['user'], 'sid': request.sid}, room=room_id, include_self=False)
-
-@socketio.on('webrtc_signal')
-def on_webrtc_signal(data):
-    target_sid = data.get('target_sid')
-    data['sender_sid'] = request.sid
-    if target_sid: emit('webrtc_signal', data, room=target_sid)
-
-def broadcast_room_state(room_id):
-    room = mafia_rooms[room_id]
-    emit('mafia_room_update', {
-        'room_id': room.room_id,
-        'name': room.name,
-        'state': room.state,
-        'players': room.players,
-        'logs': room.logs,
-        'timer_end': room.timer_end
-    }, broadcast=True)
-
-@socketio.on('mafia_get_rooms')
-def on_mafia_get_rooms():
-    rinfo = {}
-    for rid, r in mafia_rooms.items(): rinfo[rid] = {'name': r.name, 'state': r.state, 'count': len(r.players)}
-    emit('mafia_rooms_list', {'rooms': rinfo})
-
-@socketio.on('mafia_get_room_state')
-def on_mafia_get_room_state(data): broadcast_room_state(data['room_id'])
-
-@socketio.on('mafia_join')
-def on_mafia_join(data):
-    rid = data['room_id']
-    room = mafia_rooms[rid]
-    if room.add_player(data['user']):
-        room.logs.append(f"Игрок **{data['user']}** занял место.")
-        broadcast_room_state(rid)
-
-@socketio.on('mafia_leave')
-def on_mafia_leave(data):
-    rid = data['room_id']
-    room = mafia_rooms[rid]
-    if room.remove_player(data['user']):
-        room.logs.append(f"Игрок **{data['user']}** покинул место.")
-        broadcast_room_state(rid)
-
-@socketio.on('mafia_start')
-def on_mafia_start(data):
-    rid = data['room_id']
-    room = mafia_rooms[rid]
-    ok, msg = room.start_game()
-    if ok: broadcast_room_state(rid)
-
-@socketio.on('mafia_action')
-def on_mafia_action(data):
-    rid = data['room_id']
-    room = mafia_rooms[rid]
-    user = data['user']
-    target = data['target']
-    act = data['action']
-
-    if room.state == 'night':
-        if act == 'kill' and room.players[user]['role'] == 'mafia': room.night_actions['mafia'][user] = target
-        alive_mafia = [u for u, p in room.players.items() if p['alive'] and p['role'] == 'mafia']
-        if len(room.night_actions['mafia']) >= len(alive_mafia):
-            room.process_night()
-            broadcast_room_state(rid)
-
-    elif room.state == 'day':
-        if act == 'vote':
-            room.day_votes[user] = target
-            alive_count = sum(1 for p in room.players.values() if p['alive'])
-            if len(room.day_votes) >= alive_count:
-                room.process_day()
-                broadcast_room_state(rid)
-
-if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))
-    socketio.run(app, host='0.0.0.0', port=port, allow_unsafe_werkzeug=True)
+    conn, db_type = get_db
