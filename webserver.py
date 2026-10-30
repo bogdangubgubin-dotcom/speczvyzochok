@@ -251,6 +251,7 @@ class MafiaRoom:
 
 mafia_rooms = {f"room_{i}": MafiaRoom(f"room_{i}", f"Комната №{i}") for i in range(1, 6)}
 online_users = {}
+user_active_chats = {}
 
 def send_web_push(username, title, body):
     if not VAPID_PUBLIC_KEY or not VAPID_PRIVATE_KEY:
@@ -273,7 +274,9 @@ def send_web_push(username, title, body):
                 subscription_info=sub_info,
                 data=payload,
                 vapid_private_key=VAPID_PRIVATE_KEY,
-                vapid_claims={"sub": VAPID_CLAIM_EMAIL}
+                vapid_claims={"sub": VAPID_CLAIM_EMAIL},
+                ttl=86400,
+                headers={"Urgency": "high"}
             )
         except WebPushException as ex:
             print("WebPush Error:", ex)
@@ -356,6 +359,10 @@ HTML_TEMPLATE = """
         .msg-header { display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: bold; color: #82b1ff; }
         .msg-me .msg-header { justify-content: flex-end; color: #e0e0e0; }
         .msg-avatar { width: 18px; height: 18px; border-radius: 50%; background-size: cover; background-position: center; display: inline-block; cursor: pointer; }
+
+        .call-card { background: var(--panel-bg); border: 1px solid #3B8ED0; border-radius: 12px; padding: 12px; width: 100%; max-width: 280px; align-self: center; margin: 10px 0; text-align: center; }
+        .call-card-btns { display: flex; gap: 10px; margin-top: 10px; justify-content: center; }
+        .call-card-btns button { width: auto; padding: 6px 16px; font-size: 13px; }
 
         .video-note { width: 160px; height: 160px; border-radius: 12px; object-fit: cover; border: 2px solid var(--panel-border); background: #000; cursor: pointer; }
 
@@ -1402,6 +1409,35 @@ HTML_TEMPLATE = """
             const box = document.getElementById('messages');
             const isMe = msg.sender === currentUser;
 
+            if (msg.msg_type === 'call_card') {
+                if (!div) {
+                    div = document.createElement('div');
+                    div.id = 'msg-elem-' + msg.id;
+                    div.className = 'call-card';
+                    box.appendChild(div);
+                }
+                const isIncoming = msg.target === currentUser;
+                div.innerHTML = `
+                    <div style="font-size: 24px; margin-bottom: 5px;">📞</div>
+                    <div style="font-weight: bold; font-size: 14px; margin-bottom: 4px;">
+                        ${isIncoming ? 'Входящий звонок от @' + msg.sender : 'Исходящий звонок для @' + msg.target}
+                    </div>
+                    <div style="font-size: 12px; color: #aaa;">${isIncoming ? 'Вам звонят...' : 'Ожидание ответа...'}</div>
+                    ${isIncoming ? `
+                        <div class="call-card-btns">
+                            <button style="background: #2e7d32;" onclick="acceptCallFromCard('${msg.sender}')">Принять</button>
+                            <button style="background: #c62828;" onclick="endCall()">Отклонить</button>
+                        </div>
+                    ` : `
+                        <div class="call-card-btns">
+                            <button style="background: #c62828;" onclick="endCall()">Сбросить</button>
+                        </div>
+                    `}
+                `;
+                box.scrollTop = box.scrollHeight;
+                return;
+            }
+
             if (!div) {
                 div = document.createElement('div');
                 div.id = 'msg-elem-' + msg.id;
@@ -1547,6 +1583,11 @@ HTML_TEMPLATE = """
             setAvatarElement(document.getElementById('call-user-avatar'), data.caller);
         });
 
+        function acceptCallFromCard(callerName) {
+            if (incomingCallData) acceptCall();
+            else switchChat(callerName);
+        }
+
         socket.on('call_failed', (data) => {
             if (data.reason === 'offline') {
                 document.getElementById('call-status-text').innerText = 'Пользователь не в сети. Оставлен пропущенный звонок.';
@@ -1593,7 +1634,7 @@ HTML_TEMPLATE = """
 
         function endCall() {
             const target = incomingCallData ? incomingCallData.caller : currentTarget;
-            socket.emit('call_end', { target: target });
+            socket.emit('call_end', { target: target, caller: currentUser });
             endCallLocal();
         }
 
@@ -1602,6 +1643,7 @@ HTML_TEMPLATE = """
             if (activeCallPeer) activeCallPeer.close();
             activeCallPeer = null; directCallStream = null; incomingCallData = null;
             document.getElementById('call-modal').style.display = 'none';
+            document.querySelectorAll('.call-card').forEach(c => c.remove());
         }
 
         function openMafiaModal() {
@@ -1859,23 +1901,29 @@ def serve_sw():
     });
 
     self.addEventListener('activate', (e) => {
-        e.waitUntil(clients.claim());
+        e.waitUntil(self.clients.claim());
     });
 
     self.addEventListener('fetch', (e) => {
-        e.respondWith(fetch(e.request));
+        // Фоновая обработка сети
     });
 
     self.addEventListener('push', function(event) {
         let data = {};
         if (event.data) {
-            try { data = event.data.json(); } catch(e) { data = { title: 'Уведомление', body: event.data.text() }; }
+            try { 
+                data = event.data.json(); 
+            } catch(e) { 
+                data = { title: 'Новое сообщение', body: event.data.text() }; 
+            }
         }
-        const title = data.title || 'Новое сообщение';
+        const title = data.title || 'Спецзвязочок';
         const options = {
             body: data.body || '',
             icon: 'https://cdn-icons-png.flaticon.com/512/732/732200.png',
-            vibrate: [200, 100, 200],
+            vibrate: [200, 100, 200, 100, 200],
+            tag: 'speczvyazok-msg',
+            renotify: true,
             data: { url: '/' }
         };
         event.waitUntil(self.registration.showNotification(title, options));
@@ -1894,8 +1942,6 @@ def serve_sw():
     });
     """
     return sw_code, 200, {'Content-Type': 'application/javascript'}
-
-user_active_chats = {}
 
 @socketio.on('connect')
 def on_connect(): pass
@@ -2004,9 +2050,10 @@ def on_call_start(data):
     caller = data.get('caller')
     target = data.get('target')
     
-    # Отправляем фоновый Push о вызове мгновенно
+    # 1. Отправляем фоновый Push-вызов мгновенно
     send_web_push(target, f"📞 Входящий звонок от {caller}", "Вам звонят! Откройте приложение, чтобы ответить.")
 
+    # 2. Если пользователь оффлайн
     if target not in online_users:
         conn, db_type = get_db()
         cur = conn.cursor()
@@ -2041,6 +2088,18 @@ def on_call_start(data):
         emit('new_msg', missed_msg, room=request.sid)
         emit('call_failed', {'target': target, 'reason': 'offline'}, room=request.sid)
     else:
+        # 3. Если онлайн: генерируем интерактивную карточку звонка в чате
+        call_msg = {
+            'id': int(time.time() * 1000),
+            'sender': caller,
+            'target': target,
+            'msg': '📞 Входящий звонок...',
+            'msg_type': 'call_card',
+            'is_read': 0,
+            'is_edited': 0
+        }
+        emit('new_msg', call_msg, room=target)
+        emit('new_msg', call_msg, room=caller)
         emit('incoming_call', data, room=target)
 
 @socketio.on('call_accept')
@@ -2050,7 +2109,11 @@ def on_call_accept(data): emit('call_accepted', data, room=data['target'])
 def on_call_signal(data): emit('call_signal', data, room=data['target'])
 
 @socketio.on('call_end')
-def on_call_end(data): emit('call_ended', data, room=data['target'])
+def on_call_end(data):
+    target = data.get('target')
+    caller = data.get('caller')
+    if target: emit('call_ended', data, room=target)
+    if caller: emit('call_ended', data, room=caller)
 
 @socketio.on('create_channel')
 def on_create_channel(data):
@@ -2305,7 +2368,7 @@ def on_send_msg(data):
         emit('new_msg', data, room=target)
         if sender != target: emit('new_msg', data, room=sender)
 
-        # Отправляем Push, ТОЛЬКО если пользователь закрыл приложение или свернул чат с отправителем
+        # Отправка Push только если чат не в фокусе у получателя
         recipient_active_chat = user_active_chats.get(target)
         if recipient_active_chat != sender:
             display_text = data['msg']
