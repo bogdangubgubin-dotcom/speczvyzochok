@@ -13,7 +13,8 @@ from pywebpush import webpush, WebPushException
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'speczvyazok_secret_key_2026'
 
-socketio = SocketIO(app, cors_allowed_origins="*", max_http_buffer_size=25 * 1024 * 1024, async_mode=None, ping_timeout=10, ping_interval=5)
+# Настройка сокета с частым пингом для быстрой смены 4G/Wi-Fi без зависаний
+socketio = SocketIO(app, cors_allowed_origins="*", max_http_buffer_size=25 * 1024 * 1024, async_mode=None, ping_timeout=5, ping_interval=3)
 
 DATABASE_URL = os.environ.get('DATABASE_URL')
 VAPID_PUBLIC_KEY = os.environ.get('VAPID_PUBLIC_KEY', '')
@@ -253,7 +254,7 @@ mafia_rooms = {f"room_{i}": MafiaRoom(f"room_{i}", f"Комната №{i}") for
 online_users = {}
 user_active_chats = {}
 
-def send_web_push(username, title, body):
+def send_web_push(username, title, body, push_type="CHAT_MESSAGE", extra_data=None):
     if not VAPID_PUBLIC_KEY or not VAPID_PRIVATE_KEY:
         return
     conn, db_type = get_db()
@@ -265,7 +266,14 @@ def send_web_push(username, title, body):
     rows = cur.fetchall()
     conn.close()
 
-    payload = json.dumps({'title': title, 'body': body})
+    payload_dict = {
+        'title': title,
+        'body': body,
+        'type': push_type,
+        'tag': f"msg-{int(time.time())}",
+        'data': extra_data or {}
+    }
+    payload = json.dumps(payload_dict)
 
     for row in rows:
         try:
@@ -276,7 +284,10 @@ def send_web_push(username, title, body):
                 vapid_private_key=VAPID_PRIVATE_KEY,
                 vapid_claims={"sub": VAPID_CLAIM_EMAIL},
                 ttl=86400,
-                headers={"Urgency": "high"}
+                headers={
+                    "Urgency": "high",
+                    "Topic": "chat-msg"
+                }
             )
         except WebPushException as ex:
             print("WebPush Error:", ex)
@@ -489,7 +500,7 @@ HTML_TEMPLATE = """
         </div>
 
         <div id="chat-main" onclick="closeSidebar()">
-            <header>
+            header>
                 <div class="header-left">
                     <button class="toggle-btn" onclick="event.stopPropagation(); toggleSidebar();">☰</button>
                     <div class="header-title-box">
@@ -702,8 +713,9 @@ HTML_TEMPLATE = """
             reconnection: true,
             reconnectionAttempts: Infinity,
             reconnectionDelay: 1000,
-            reconnectionDelayMax: 5000,
-            timeout: 20000
+            reconnectionDelayMax: 3000,
+            timeout: 10000,
+            transports: ['websocket', 'polling']
         });
 
         let currentUser = "";
@@ -738,6 +750,7 @@ HTML_TEMPLATE = """
         let activeCallPeer = null;
         let directCallStream = null;
         let incomingCallData = null;
+        let callTimeoutTimer = null;
 
         const VAPID_PUBLIC_KEY = "{{ vapid_public_key }}";
 
@@ -753,6 +766,20 @@ HTML_TEMPLATE = """
                 swRegistration = reg;
             }).catch(e => console.log('SW error:', e));
         }
+
+        // Обработка переключения сети 4G / Wi-Fi без перезагрузки
+        window.addEventListener('online', () => {
+            if (!socket.connected) socket.connect();
+            if (currentUser && currentTarget) {
+                socket.emit('load_history', { user: currentUser, target: currentTarget });
+            }
+        });
+
+        socket.on('connect', () => {
+            const savedUser = localStorage.getItem('pychat_user');
+            const savedPass = localStorage.getItem('pychat_pass');
+            if (savedUser && savedPass) socket.emit('login', { username: savedUser, password: savedPass });
+        });
 
         let globalStartX = 0, globalStartY = 0;
 
@@ -934,12 +961,6 @@ HTML_TEMPLATE = """
                 elem.innerText = username.charAt(0).toUpperCase();
             }
         }
-
-        window.addEventListener('DOMContentLoaded', () => {
-            const savedUser = localStorage.getItem('pychat_user');
-            const savedPass = localStorage.getItem('pychat_pass');
-            if (savedUser && savedPass) socket.emit('login', { username: savedUser, password: savedPass });
-        });
 
         function login() {
             const u = document.getElementById('username').value.trim();
@@ -1571,6 +1592,12 @@ HTML_TEMPLATE = """
                 await activeCallPeer.setLocalDescription(offer);
                 socket.emit('call_start', { caller: currentUser, target: currentTarget, offer: offer });
 
+                // Таймаут вызова (30 секунд гудков), если человек так и не поднял трубку
+                callTimeoutTimer = setTimeout(() => {
+                    document.getElementById('call-status-text').innerText = 'Собеседник не отвечает...';
+                    setTimeout(() => { endCall(); }, 2000);
+                }, 30000);
+
             } catch(e) { alert('Ошибка доступа к микрофону!'); endCall(); }
         }
 
@@ -1588,16 +1615,8 @@ HTML_TEMPLATE = """
             else switchChat(callerName);
         }
 
-        socket.on('call_failed', (data) => {
-            if (data.reason === 'offline') {
-                document.getElementById('call-status-text').innerText = 'Пользователь не в сети. Оставлен пропущенный звонок.';
-                setTimeout(() => {
-                    endCallLocal();
-                }, 2000);
-            }
-        });
-
         async function acceptCall() {
+            if (callTimeoutTimer) clearTimeout(callTimeoutTimer);
             document.getElementById('accept-call-btn').style.display = 'none';
             document.getElementById('call-status-text').innerText = 'Разговор...';
             try {
@@ -1622,6 +1641,7 @@ HTML_TEMPLATE = """
         }
 
         socket.on('call_accepted', async (data) => {
+            if (callTimeoutTimer) clearTimeout(callTimeoutTimer);
             document.getElementById('call-status-text').innerText = 'Разговор...';
             if (activeCallPeer) await activeCallPeer.setRemoteDescription(new RTCSessionDescription(data.answer));
         });
@@ -1633,12 +1653,14 @@ HTML_TEMPLATE = """
         socket.on('call_ended', () => { endCallLocal(); });
 
         function endCall() {
+            if (callTimeoutTimer) clearTimeout(callTimeoutTimer);
             const target = incomingCallData ? incomingCallData.caller : currentTarget;
             socket.emit('call_end', { target: target, caller: currentUser });
             endCallLocal();
         }
 
         function endCallLocal() {
+            if (callTimeoutTimer) clearTimeout(callTimeoutTimer);
             if (directCallStream) directCallStream.getTracks().forEach(t => t.stop());
             if (activeCallPeer) activeCallPeer.close();
             activeCallPeer = null; directCallStream = null; incomingCallData = null;
@@ -1904,9 +1926,7 @@ def serve_sw():
         e.waitUntil(self.clients.claim());
     });
 
-    self.addEventListener('fetch', (e) => {
-        // Фоновая обработка сети
-    });
+    self.addEventListener('fetch', (e) => {});
 
     self.addEventListener('push', function(event) {
         let data = {};
@@ -1921,10 +1941,12 @@ def serve_sw():
         const options = {
             body: data.body || '',
             icon: 'https://cdn-icons-png.flaticon.com/512/732/732200.png',
-            vibrate: [200, 100, 200, 100, 200],
-            tag: 'speczvyazok-msg',
+            badge: 'https://cdn-icons-png.flaticon.com/512/732/732200.png',
+            vibrate: [500, 250, 500, 250, 500],
+            tag: data.tag || 'speczvyazok-msg',
             renotify: true,
-            data: { url: '/' }
+            requireInteraction: true,
+            data: data.data || { url: '/' }
         };
         event.waitUntil(self.registration.showNotification(title, options));
     });
@@ -2050,56 +2072,29 @@ def on_call_start(data):
     caller = data.get('caller')
     target = data.get('target')
     
-    # 1. Отправляем фоновый Push-вызов мгновенно
-    send_web_push(target, f"📞 Входящий звонок от {caller}", "Вам звонят! Откройте приложение, чтобы ответить.")
+    # 1. Сразу же отправляем критически важный Push на смартфон вызываемого (даже если он офлайн)
+    send_web_push(
+        target, 
+        f"📞 Входящий звонок от {caller}", 
+        "Вам звонят! Откройте приложение, чтобы ответить.",
+        push_type="INCOMING_CALL",
+        extra_data={"caller": caller}
+    )
 
-    # 2. Если пользователь оффлайн
-    if target not in online_users:
-        conn, db_type = get_db()
-        cur = conn.cursor()
-        msg_text = "📞 Пропущенный звонок"
-        msg_type = "text"
-        
-        if db_type == 'postgres':
-            cur.execute("""
-                INSERT INTO messages (sender, target, message, msg_type) 
-                VALUES (%s, %s, %s, %s) RETURNING id
-            """, (caller, target, msg_text, msg_type))
-            msg_id = cur.fetchone()[0]
-        else:
-            cur.execute("""
-                INSERT INTO messages (sender, target, message, msg_type) 
-                VALUES (?, ?, ?, ?)
-            """, (caller, target, msg_text, msg_type))
-            msg_id = cur.lastrowid
-            
-        conn.commit()
-        conn.close()
-        
-        missed_msg = {
-            'id': msg_id,
-            'sender': caller,
-            'target': target,
-            'msg': msg_text,
-            'msg_type': msg_type,
-            'is_read': 0,
-            'is_edited': 0
-        }
-        emit('new_msg', missed_msg, room=request.sid)
-        emit('call_failed', {'target': target, 'reason': 'offline'}, room=request.sid)
-    else:
-        # 3. Если онлайн: генерируем интерактивную карточку звонка в чате
-        call_msg = {
-            'id': int(time.time() * 1000),
-            'sender': caller,
-            'target': target,
-            'msg': '📞 Входящий звонок...',
-            'msg_type': 'call_card',
-            'is_read': 0,
-            'is_edited': 0
-        }
+    call_msg = {
+        'id': int(time.time() * 1000),
+        'sender': caller,
+        'target': target,
+        'msg': '📞 Входящий звонок...',
+        'msg_type': 'call_card',
+        'is_read': 0,
+        'is_edited': 0
+    }
+
+    # 2. Шлем событие звонка обоим участникам и позволяем гудкам идти 30 секунд
+    emit('new_msg', call_msg, room=caller)
+    if target in online_users:
         emit('new_msg', call_msg, room=target)
-        emit('new_msg', call_msg, room=caller)
         emit('incoming_call', data, room=target)
 
 @socketio.on('call_accept')
@@ -2112,6 +2107,21 @@ def on_call_signal(data): emit('call_signal', data, room=data['target'])
 def on_call_end(data):
     target = data.get('target')
     caller = data.get('caller')
+
+    # Оформляем пропущенный звонок в базу данных
+    if caller and target:
+        conn, db_type = get_db()
+        cur = conn.cursor()
+        msg_text = "📞 Пропущенный звонок"
+        msg_type = "text"
+        
+        if db_type == 'postgres':
+            cur.execute("INSERT INTO messages (sender, target, message, msg_type) VALUES (%s, %s, %s, %s)", (caller, target, msg_text, msg_type))
+        else:
+            cur.execute("INSERT INTO messages (sender, target, message, msg_type) VALUES (?, ?, ?, ?)", (caller, target, msg_text, msg_type))
+        conn.commit()
+        conn.close()
+
     if target: emit('call_ended', data, room=target)
     if caller: emit('call_ended', data, room=caller)
 
@@ -2368,9 +2378,9 @@ def on_send_msg(data):
         emit('new_msg', data, room=target)
         if sender != target: emit('new_msg', data, room=sender)
 
-        # Отправка Push только если чат не в фокусе у получателя
+        # Мгновенный дублирующий Push при заблокированном экране или свёрнутом браузере
         recipient_active_chat = user_active_chats.get(target)
-        if recipient_active_chat != sender:
+        if recipient_active_chat != sender or target not in online_users:
             display_text = data['msg']
             if data.get('msg_type') == 'voice': display_text = '🎤 Голосовое сообщение'
             elif data.get('msg_type') == 'video_note': display_text = '📹 Видео-сообщение'
