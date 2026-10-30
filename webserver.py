@@ -434,7 +434,7 @@ HTML_TEMPLATE = """
         .audio-meter-bar { height: 100%; width: 0%; background: #4caf50; transition: width 0.04s ease; }
 
         .logout-btn { background: transparent; border: 1px solid #555; color: #aaa; padding: 4px 8px; font-size: 12px; border-radius: 6px; cursor: pointer; width: auto; flex-shrink: 0; margin: 0; }
-        .admin-nav-btn { background: #d32f2f; color: #fff; padding: 5px 8px; font-size: 11px; border-radius: 6px; border: none; font-weight: bold; cursor: pointer; display: none; }
+        .admin-nav-btn { background: #d32f2f; color: #fff; padding: 0 10px; height: 32px; font-size: 11px; border-radius: 8px; border: none; font-weight: bold; cursor: pointer; display: none; white-space: nowrap; flex-shrink: 0; }
 
         .avatar-upload-box { display: flex; flex-direction: column; align-items: center; gap: 10px; margin-bottom: 10px; }
         .big-avatar { width: 70px; height: 70px; border-radius: 50%; background: #3B8ED0; display: flex; align-items: center; justify-content: center; font-size: 28px; font-weight: bold; color: #fff; background-size: cover; background-position: center; border: 2px solid #555; }
@@ -500,7 +500,7 @@ HTML_TEMPLATE = """
         </div>
 
         <div id="chat-main" onclick="closeSidebar()">
-            header>
+            <header>
                 <div class="header-left">
                     <button class="toggle-btn" onclick="event.stopPropagation(); toggleSidebar();">☰</button>
                     <div class="header-title-box">
@@ -2072,7 +2072,7 @@ def on_call_start(data):
     caller = data.get('caller')
     target = data.get('target')
     
-    # 1. Сразу же отправляем критически важный Push на смартфон вызываемого (даже если он офлайн)
+    # 1. Отправляем фоновый Push на смартфон
     send_web_push(
         target, 
         f"📞 Входящий звонок от {caller}", 
@@ -2378,7 +2378,7 @@ def on_send_msg(data):
         emit('new_msg', data, room=target)
         if sender != target: emit('new_msg', data, room=sender)
 
-        # Мгновенный дублирующий Push при заблокированном экране или свёрнутом браузере
+        # Мгновенный Push при заблокированном экране или свёрнутом браузере
         recipient_active_chat = user_active_chats.get(target)
         if recipient_active_chat != sender or target not in online_users:
             display_text = data['msg']
