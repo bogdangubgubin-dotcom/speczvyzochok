@@ -309,14 +309,7 @@ def send_web_push(username, title, body):
 
 @app.route('/')
 def index(): 
-    # Если есть фав-файл шаблона в папке 'шаблоны', загружаем его, иначе рендерим вшитый интерфейс
-    template_path = os.path.join(app.template_folder, 'index.html')
-    if os.path.exists(template_path):
-        from flask import render_template
-        return render_template('index.html', vapid_public_key=VAPID_PUBLIC_KEY)
-    
-    # Резервный отрисовщик UI
-    return f"<h2>Speczvyzochok PWA Backend Running</h2>"
+    return render_template_string(HTML_TEMPLATE, vapid_public_key=VAPID_PUBLIC_KEY)
 
 @app.route('/manifest.json')
 def serve_manifest():
