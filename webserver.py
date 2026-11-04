@@ -6,19 +6,19 @@ import json
 import random
 import psycopg2
 import psycopg2.extras
-from flask import Flask, render_template_string, request, jsonify
+from flask import Flask, render_template, request, jsonify
 from flask_socketio import SocketIO, emit, join_room, leave_room
 from pywebpush import webpush, WebPushException
 
-# 1. Настройка Flask приложения с указанием папок шаблонов и статики
+# 1. Настройка Flask с папкой 'templates'
 app = Flask(
     __name__,
-    template_folder='шаблоны',
+    template_folder='templates',
     static_folder='static'
 )
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'speczvyazok_secret_key_2026')
 
-# 2. Инициализация SocketIO с увеличенным буфером для медиафайлов
+# 2. Инициализация SocketIO
 socketio = SocketIO(
     app, 
     cors_allowed_origins="*", 
@@ -157,7 +157,7 @@ def hash_password(password, salt=None):
     key = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), salt.encode('utf-8'), 100000)
     return key.hex(), salt
 
-# --- КЛАСС И ИГРОВАЯ ЛОГИКА "МАФИЯ" ---
+# --- ЛОГИКА ИГРЫ "МАФИЯ" ---
 
 class MafiaRoom:
     def __init__(self, room_id, name):
@@ -269,11 +269,11 @@ class MafiaRoom:
 
 # --- ГЛОБАЛЬНЫЕ СТРУКТУРЫ ДАННЫХ В ПАМЯТИ ---
 mafia_rooms = {f"room_{i}": MafiaRoom(f"room_{i}", f"Комната №{i}") for i in range(1, 6)}
-call_rooms = {}         # Для видеосетки групповых звонков: { room_id: [sid1, sid2, ...] }
-online_users = {}       # { username: socket_sid }
-user_active_chats = {} # { username: current_active_chat }
+call_rooms = {}         
+online_users = {}       
+user_active_chats = {} 
 
-# --- ФИНАЛЬНАЯ ЛОГИКА PUSH-УВЕДОМЛЕНИЙ (С ВЫСОКИМ ПРИОРИТЕТОМ ДЛЯ ANDROID) ---
+# --- ФУНКЦИЯ WEB PUSH ---
 
 def send_web_push(username, title, body):
     if not VAPID_PUBLIC_KEY or not VAPID_PRIVATE_KEY:
@@ -298,7 +298,7 @@ def send_web_push(username, title, body):
                 vapid_private_key=VAPID_PRIVATE_KEY,
                 vapid_claims={"sub": VAPID_CLAIM_EMAIL},
                 ttl=86400,
-                headers={"Urgency": "high"} # Высокий приоритет отключает Doze Mode на Android
+                headers={"Urgency": "high"}
             )
         except WebPushException as ex:
             print("WebPush Error:", ex)
@@ -309,7 +309,7 @@ def send_web_push(username, title, body):
 
 @app.route('/')
 def index(): 
-    return render_template_string(HTML_TEMPLATE, vapid_public_key=VAPID_PUBLIC_KEY)
+    return render_template('index.html', vapid_public_key=VAPID_PUBLIC_KEY)
 
 @app.route('/manifest.json')
 def serve_manifest():
@@ -370,7 +370,7 @@ def serve_sw():
     """
     return sw_code, 200, {'Content-Type': 'application/javascript'}
 
-# --- СОБЫТИЯ SOCKET.IO (СИСТЕМА И АВТОРИЗАЦИЯ) ---
+# --- СОБЫТИЯ SOCKET.IO ---
 
 @socketio.on('connect')
 def on_connect(): pass
@@ -378,7 +378,6 @@ def on_connect(): pass
 @socketio.on('disconnect')
 def on_disconnect():
     sid = request.sid
-    # 1. Удаление из списка онлайн
     for uname, s_id in list(online_users.items()):
         if s_id == sid:
             del online_users[uname]
@@ -393,7 +392,6 @@ def on_disconnect():
             on_get_users()
             break
             
-    # 2. Очистка сокета из групповых звонков
     for room_id, users in list(call_rooms.items()):
         if sid in users:
             users.remove(sid)
@@ -484,7 +482,7 @@ def on_register(data):
         emit('auth_response', {'status': 'error', 'message': 'Логин занят'})
     finally: conn.close()
 
-# --- ГРУППОВЫЕ WEBRTC ЗВОНКИ С КНОПКАМИ MUTE/CAM (КОМНАТЫ) ---
+# --- WEBRTC ЗВОНКИ ---
 
 @socketio.on('join_call')
 def handle_join_call(data):
@@ -525,8 +523,6 @@ def handle_leave_call(data):
             del call_rooms[room_id]
             
     emit('user_left_call', {'sid': sid}, room=room_id, include_self=False)
-
-# --- ЛИЧНЫЕ ЗВОНКИ 1-НА-1 (DIRECT CALLS) ---
 
 @socketio.on('call_start')
 def on_call_start(data):
@@ -595,7 +591,7 @@ def on_call_end(data):
     if target: emit('call_ended', data, room=target)
     if caller: emit('call_ended', data, room=caller)
 
-# --- КАНАЛЫ И АДМИНИСТРИРОВАНИЕ ---
+# --- КАНАЛЫ И ПОЛЬЗОВАТЕЛИ ---
 
 @socketio.on('create_channel')
 def on_create_channel(data):
@@ -915,7 +911,7 @@ def on_delete_msg(data):
     conn.close()
     emit('msg_deleted', {'msg_id': msg_id}, broadcast=True)
 
-# --- СОБЫТИЯ ИГРЫ «МАФИЯ» И WEBRTC-ГОЛОСА ---
+# --- СОБЫТИЯ ИГРЫ «МАФИЯ» ---
 
 @socketio.on('webrtc_join')
 def on_webrtc_join(data):
