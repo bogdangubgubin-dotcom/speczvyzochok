@@ -1,5 +1,6 @@
 import os
 import time
+import random
 from flask import Flask, render_template, request, jsonify, send_from_directory
 from flask_socketio import SocketIO, emit, join_room, leave_room
 from pywebpush import webpush, WebPushException
@@ -21,6 +22,7 @@ user_sockets = {}       # sid -> username
 push_subscriptions = {} # username -> subscription_json
 active_calls = {}       # roomId -> call_data
 channels = [{'name': '#general'}]
+mafia_rooms = {}        # room_name -> room_data
 
 def get_db():
     database_url = os.environ.get('DATABASE_URL')
@@ -34,7 +36,6 @@ def get_db():
 def init_db():
     conn, db_type = get_db()
     cur = conn.cursor()
-    
     if db_type == 'postgres':
         cur.execute('''CREATE TABLE IF NOT EXISTS users (
             id SERIAL PRIMARY KEY,
@@ -86,7 +87,6 @@ def init_db():
             is_edited INTEGER DEFAULT 0,
             reactions TEXT DEFAULT '{}'
         )''')
-
     conn.commit()
     conn.close()
 
@@ -106,20 +106,17 @@ def send_web_push(target_user, title, body, room_id=""):
     except WebPushException as ex:
         print(f"Push error for {target_user}:", ex)
 
-# --- ПРОСТАЯ И НАДЕЖНАЯ АВТОРИЗАЦИЯ И РЕГИСТРАЦИЯ ---
+# --- АВТОРИЗАЦИЯ И РЕГИСТРАЦИЯ ---
 
 @socketio.on('login')
 def on_login(data):
     u = str(data.get('username', '')).strip()
     p = str(data.get('password', '')).strip()
-    
     if not u or not p:
         emit('auth_response', {'status': 'error', 'message': 'Заполните логин и пароль'})
         return
-
     conn, db_type = get_db()
     cur = conn.cursor()
-    
     try:
         if db_type == 'postgres':
             cur.execute("SELECT password, role, avatar FROM users WHERE LOWER(username)=LOWER(%s)", (u,))
@@ -132,58 +129,42 @@ def on_login(data):
             online_users[u] = request.sid
             user_sockets[request.sid] = u
             join_room(u)
-            emit('auth_response', {
-                'status': 'ok', 
-                'username': u, 
-                'role': user[1] if user[1] else 'user', 
-                'avatar': user[2] if user[2] else ''
-            })
+            emit('auth_response', {'status': 'ok', 'username': u, 'role': user[1] or 'user', 'avatar': user[2] or ''})
             broadcast_users()
         else:
             emit('auth_response', {'status': 'error', 'message': 'Неверный логин или пароль'})
     except Exception as e:
         if conn: conn.close()
-        print("Login Error:", e)
-        emit('auth_response', {'status': 'error', 'message': 'Ошибка БД при входе'})
+        emit('auth_response', {'status': 'error', 'message': 'Ошибка авторизации на сервере'})
 
 @socketio.on('register')
 def on_register(data):
     u = str(data.get('username', '')).strip()
     p = str(data.get('password', '')).strip()
-    
     if not u or not p:
         emit('auth_response', {'status': 'error', 'message': 'Введите логин и пароль'})
         return
-
     role = 'admin' if u.lower() == 'totr' else 'user'
     conn, db_type = get_db()
     cur = conn.cursor()
-    
     try:
-        # Проверяем, существует ли пользователь
         if db_type == 'postgres':
             cur.execute("SELECT id FROM users WHERE LOWER(username)=LOWER(%s)", (u,))
         else:
             cur.execute("SELECT id FROM users WHERE LOWER(username)=LOWER(?)", (u,))
-        
-        existing_user = cur.fetchone()
-
-        if existing_user:
-            # Если пользователь существует — обновляем его пароль и роль
+        existing = cur.fetchone()
+        if existing:
             if db_type == 'postgres':
-                cur.execute("UPDATE users SET password=%s, role=%s WHERE id=%s", (p, role, existing_user[0]))
+                cur.execute("UPDATE users SET password=%s, role=%s WHERE id=%s", (p, role, existing[0]))
             else:
-                cur.execute("UPDATE users SET password=?, role=? WHERE id=?", (p, role, existing_user[0]))
+                cur.execute("UPDATE users SET password=?, role=? WHERE id=?", (p, role, existing[0]))
         else:
-            # Если нет — создаем новую запись
             if db_type == 'postgres':
                 cur.execute("INSERT INTO users (username, password, role) VALUES (%s, %s, %s)", (u, p, role))
             else:
                 cur.execute("INSERT INTO users (username, password, role) VALUES (?, ?, ?)", (u, p, role))
-            
         conn.commit()
         conn.close()
-        
         online_users[u] = request.sid
         user_sockets[request.sid] = u
         join_room(u)
@@ -191,8 +172,7 @@ def on_register(data):
         broadcast_users()
     except Exception as e:
         if conn: conn.close()
-        print("Register Error:", e)
-        emit('auth_response', {'status': 'error', 'message': 'Ошибка сервера при регистрации'})
+        emit('auth_response', {'status': 'error', 'message': 'Ошибка регистрации'})
 
 @socketio.on('disconnect')
 def on_disconnect():
@@ -359,6 +339,63 @@ def on_update_avatar(data):
 def on_user_typing(data):
     emit('display_typing', data, room=data.get('target'))
 
+# --- ЛОГИКА ИГРЫ МАФИЯ ---
+
+@socketio.on('mafia_get_rooms')
+def on_mafia_get_rooms():
+    rooms_summary = [{'name': name, 'count': len(room['players']), 'started': room['started']} for name, room in mafia_rooms.items()]
+    emit('mafia_rooms_list', {'rooms': rooms_summary})
+
+@socketio.on('mafia_create_room')
+def on_mafia_create_room(data):
+    rname = data.get('room_name')
+    user = data.get('user')
+    if rname and rname not in mafia_rooms:
+        mafia_rooms[rname] = {
+            'creator': user,
+            'players': [user],
+            'roles': {},
+            'started': False,
+            'phase': 'lobby'
+        }
+        join_room('mafia_' + rname)
+        emit('mafia_room_joined', {'room_name': rname, 'players': [user], 'is_creator': True})
+        on_mafia_get_rooms()
+
+@socketio.on('mafia_join_room')
+def on_mafia_join_room(data):
+    rname = data.get('room_name')
+    user = data.get('user')
+    if rname in mafia_rooms and not mafia_rooms[rname]['started']:
+        if user not in mafia_rooms[rname]['players']:
+            mafia_rooms[rname]['players'].append(user)
+        join_room('mafia_' + rname)
+        is_creator = (mafia_rooms[rname]['creator'] == user)
+        emit('mafia_room_joined', {'room_name': rname, 'players': mafia_rooms[rname]['players'], 'is_creator': is_creator}, room=request.sid)
+        emit('mafia_update_players', {'players': mafia_rooms[rname]['players']}, room='mafia_' + rname)
+        on_mafia_get_rooms()
+
+@socketio.on('mafia_start_game')
+def on_mafia_start_game(data):
+    rname = data.get('room_name')
+    if rname in mafia_rooms and len(mafia_rooms[rname]['players']) >= 3:
+        room = mafia_rooms[rname]
+        room['started'] = True
+        players = list(room['players'])
+        random.shuffle(players)
+        
+        roles = {}
+        roles[players[0]] = 'Мафия'
+        roles[players[1]] = 'Детектив'
+        for p in players[2:]:
+            roles[p] = 'Мирный житель'
+        
+        room['roles'] = roles
+        for p in players:
+            sid = online_users.get(p)
+            if sid:
+                emit('mafia_game_started', {'role': roles[p]}, room=sid)
+
 # --- МОДУЛЬ ЗВОНКОВ (WEBRTC И PUSH) ---
 
 @socketio.on('call_start')
@@ -379,10 +416,8 @@ def on_call_start(data):
     }
 
     call_title = "📹 Входящий видеозвонок" if call_type == 'video' else "📞 Входящий звонок"
-    
     send_web_push(target, f"{call_title} от @{caller}", "Нажмите, чтобы ответить", room_id)
 
-    call_payload = active_calls[room_id]
     call_msg = {
         'id': int(time.time() * 1000),
         'sender': caller,
@@ -399,7 +434,7 @@ def on_call_start(data):
     emit('new_msg', call_msg, room=caller)
 
     if target in online_users:
-        emit('incoming_call', call_payload, room=target)
+        emit('incoming_call', active_calls[room_id], room=target)
 
 @socketio.on('check_active_call')
 def on_check_active_call(data):
