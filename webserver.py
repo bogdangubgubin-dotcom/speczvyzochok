@@ -106,7 +106,7 @@ def send_web_push(target_user, title, body, room_id=""):
     except WebPushException as ex:
         print(f"Push error for {target_user}:", ex)
 
-# --- АВТОРИЗАЦИЯ И РЕГИСТРАЦИЯ С ОЧИСТКОЙ СТРОК ---
+# --- ПРОСТАЯ И НАДЕЖНАЯ АВТОРИЗАЦИЯ И РЕГИСТРАЦИЯ ---
 
 @socketio.on('login')
 def on_login(data):
@@ -144,7 +144,7 @@ def on_login(data):
     except Exception as e:
         if conn: conn.close()
         print("Login Error:", e)
-        emit('auth_response', {'status': 'error', 'message': 'Ошибка авторизации на сервере'})
+        emit('auth_response', {'status': 'error', 'message': 'Ошибка БД при входе'})
 
 @socketio.on('register')
 def on_register(data):
@@ -160,16 +160,26 @@ def on_register(data):
     cur = conn.cursor()
     
     try:
-        # Если старый аккаунт существовал со сломанным паролем — перезаписываем его новым паролем
+        # Проверяем, существует ли пользователь
         if db_type == 'postgres':
-            cur.execute("""
-                INSERT INTO users (username, password, role) 
-                VALUES (%s, %s, %s)
-                ON CONFLICT (username) 
-                DO UPDATE SET password = EXCLUDED.password, role = EXCLUDED.role
-            """, (u, p, role))
+            cur.execute("SELECT id FROM users WHERE LOWER(username)=LOWER(%s)", (u,))
         else:
-            cur.execute("INSERT OR REPLACE INTO users (username, password, role) VALUES (?, ?, ?)", (u, p, role))
+            cur.execute("SELECT id FROM users WHERE LOWER(username)=LOWER(?)", (u,))
+        
+        existing_user = cur.fetchone()
+
+        if existing_user:
+            # Если пользователь существует — обновляем его пароль и роль
+            if db_type == 'postgres':
+                cur.execute("UPDATE users SET password=%s, role=%s WHERE id=%s", (p, role, existing_user[0]))
+            else:
+                cur.execute("UPDATE users SET password=?, role=? WHERE id=?", (p, role, existing_user[0]))
+        else:
+            # Если нет — создаем новую запись
+            if db_type == 'postgres':
+                cur.execute("INSERT INTO users (username, password, role) VALUES (%s, %s, %s)", (u, p, role))
+            else:
+                cur.execute("INSERT INTO users (username, password, role) VALUES (?, ?, ?)", (u, p, role))
             
         conn.commit()
         conn.close()
@@ -182,7 +192,7 @@ def on_register(data):
     except Exception as e:
         if conn: conn.close()
         print("Register Error:", e)
-        emit('auth_response', {'status': 'error', 'message': 'Ошибка регистрации'})
+        emit('auth_response', {'status': 'error', 'message': 'Ошибка сервера при регистрации'})
 
 @socketio.on('disconnect')
 def on_disconnect():
