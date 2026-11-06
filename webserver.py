@@ -528,61 +528,57 @@ def handle_leave_call(data):
 def on_call_start(data):
     caller = data.get('caller')
     target = data.get('target')
+    room_id = data.get('roomId', f"call_{min(caller, target)}_{max(caller, target)}")
     
-    send_web_push(target, f"📞 Входящий звонок от {caller}", "Вам звонят! Откройте приложение, чтобы ответить.")
+    # Отправляем Web Push с тегом звонка для шторки Android/iOS
+    send_web_push(
+        target, 
+        f"📞 Входящий звонок от {caller}", 
+        "Нажмите, чтобы ответить на звонок"
+    )
+
+    call_payload = {
+        'caller': caller,
+        'target': target,
+        'roomId': room_id,
+        'offer': data.get('offer')
+    }
 
     if target not in online_users:
         conn, db_type = get_db()
         cur = conn.cursor()
         msg_text = "📞 Пропущенный звонок"
-        msg_type = "text"
         
         if db_type == 'postgres':
-            cur.execute("""
-                INSERT INTO messages (sender, target, message, msg_type) 
-                VALUES (%s, %s, %s, %s) RETURNING id
-            """, (caller, target, msg_text, msg_type))
+            cur.execute("INSERT INTO messages (sender, target, message, msg_type) VALUES (%s, %s, %s, 'text') RETURNING id", (caller, target, msg_text))
             msg_id = cur.fetchone()[0]
         else:
-            cur.execute("""
-                INSERT INTO messages (sender, target, message, msg_type) 
-                VALUES (?, ?, ?, ?)
-            """, (caller, target, msg_text, msg_type))
+            cur.execute("INSERT INTO messages (sender, target, message, msg_type) VALUES (?, ?, ?, 'text')", (caller, target, msg_text))
             msg_id = cur.lastrowid
             
         conn.commit()
         conn.close()
         
-        missed_msg = {
-            'id': msg_id,
-            'sender': caller,
-            'target': target,
-            'msg': msg_text,
-            'msg_type': msg_type,
-            'is_read': 0,
-            'is_edited': 0
-        }
-        emit('new_msg', missed_msg, room=request.sid)
         emit('call_failed', {'target': target, 'reason': 'offline'}, room=request.sid)
     else:
         call_msg = {
             'id': int(time.time() * 1000),
             'sender': caller,
             'target': target,
-            'msg': '📞 Входящий звонок...',
+            'msg': f"📞 Входящий звонок в комнату {room_id}...",
             'msg_type': 'call_card',
+            'roomId': room_id,
             'is_read': 0,
             'is_edited': 0
         }
         emit('new_msg', call_msg, room=target)
         emit('new_msg', call_msg, room=caller)
-        emit('incoming_call', data, room=target)
+        emit('incoming_call', call_payload, room=target)
 
 @socketio.on('call_accept')
-def on_call_accept(data): emit('call_accepted', data, room=data['target'])
-
-@socketio.on('call_signal')
-def on_call_signal(data): emit('call_signal', data, room=data['target'])
+def on_call_accept(data):
+    target = data.get('target')
+    emit('call_accepted', data, room=target)
 
 @socketio.on('call_end')
 def on_call_end(data):
