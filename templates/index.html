@@ -1,464 +1,664 @@
-import os
-import time
-import random
-from flask import Flask, render_template, request, jsonify, send_from_directory
-from flask_socketio import SocketIO, emit, join_room, leave_room
-from pywebpush import webpush, WebPushException
-import sqlite3
-import psycopg2
-
-app = Flask(__name__)
-app.config['SECRET_KEY'] = 'secret_key_change_me'
-socketio = SocketIO(app, cors_allowed_origins="*")
-
-# Переменные окружения VAPID
-VAPID_PRIVATE_KEY = os.environ.get('VAPID_PRIVATE_KEY', '')
-VAPID_PUBLIC_KEY = os.environ.get('VAPID_PUBLIC_KEY', '')
-VAPID_CLAIMS = {"sub": "mailto:admin@example.com"}
-
-# Глобальное состояние
-online_users = {}       # username -> request.sid
-user_sockets = {}       # sid -> username
-push_subscriptions = {} # username -> subscription_json
-active_calls = {}       # roomId -> call_data
-channels = [{'name': '#general'}]
-mafia_rooms = {}        # room_name -> room_data
-
-def get_db():
-    database_url = os.environ.get('DATABASE_URL')
-    if database_url:
-        conn = psycopg2.connect(database_url, sslmode='require')
-        return conn, 'postgres'
-    else:
-        conn = sqlite3.connect('database.db')
-        return conn, 'sqlite'
-
-def init_db():
-    conn, db_type = get_db()
-    cur = conn.cursor()
-    if db_type == 'postgres':
-        cur.execute('''CREATE TABLE IF NOT EXISTS users (
-            id SERIAL PRIMARY KEY,
-            username TEXT UNIQUE,
-            password TEXT,
-            role TEXT DEFAULT 'user',
-            avatar TEXT DEFAULT '',
-            last_seen DOUBLE PRECISION DEFAULT 0
-        )''')
-        cur.execute('''CREATE TABLE IF NOT EXISTS messages (
-            id SERIAL PRIMARY KEY,
-            sender TEXT,
-            target TEXT,
-            message TEXT,
-            msg_type TEXT DEFAULT 'text',
-            ttl INTEGER DEFAULT 0,
-            reply_to INTEGER DEFAULT NULL,
-            reply_text TEXT DEFAULT '',
-            is_read INTEGER DEFAULT 0,
-            is_edited INTEGER DEFAULT 0,
-            reactions TEXT DEFAULT '{}'
-        )''')
-        try:
-            cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS password TEXT;")
-            cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'user';")
-            cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar TEXT DEFAULT '';")
-            cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS last_seen DOUBLE PRECISION DEFAULT 0;")
-        except Exception:
-            pass
-    else:
-        cur.execute('''CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT UNIQUE,
-            password TEXT,
-            role TEXT DEFAULT 'user',
-            avatar TEXT DEFAULT '',
-            last_seen REAL DEFAULT 0
-        )''')
-        cur.execute('''CREATE TABLE IF NOT EXISTS messages (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            sender TEXT,
-            target TEXT,
-            message TEXT,
-            msg_type TEXT DEFAULT 'text',
-            ttl INTEGER DEFAULT 0,
-            reply_to INTEGER DEFAULT NULL,
-            reply_text TEXT DEFAULT '',
-            is_read INTEGER DEFAULT 0,
-            is_edited INTEGER DEFAULT 0,
-            reactions TEXT DEFAULT '{}'
-        )''')
-    conn.commit()
-    conn.close()
-
-init_db()
-
-def send_web_push(target_user, title, body, room_id=""):
-    sub = push_subscriptions.get(target_user)
-    if not sub or not VAPID_PRIVATE_KEY:
-        return
-    try:
-        webpush(
-            subscription_info=sub,
-            data=f'{{"title": "{title}", "body": "{body}", "roomId": "{room_id}"}}',
-            vapid_private_key=VAPID_PRIVATE_KEY,
-            vapid_claims=VAPID_CLAIMS
-        )
-    except Exception as ex:
-        print(f"Push error for {target_user}:", ex)
-
-# --- АВТОРИЗАЦИЯ И РЕГИСТРАЦИЯ ---
-
-@socketio.on('login')
-def on_login(data):
-    u = str(data.get('username', '')).strip()
-    p = str(data.get('password', '')).strip()
-    if not u or not p:
-        emit('auth_response', {'status': 'error', 'message': 'Заполните логин и пароль'})
-        return
-    conn, db_type = get_db()
-    cur = conn.cursor()
-    try:
-        if db_type == 'postgres':
-            cur.execute("SELECT password, role, avatar FROM users WHERE LOWER(username)=LOWER(%s)", (u,))
-        else:
-            cur.execute("SELECT password, role, avatar FROM users WHERE LOWER(username)=LOWER(?)", (u,))
-        user = cur.fetchone()
-        conn.close()
-
-        if user and str(user[0]).strip() == p:
-            online_users[u] = request.sid
-            user_sockets[request.sid] = u
-            join_room(u)
-            emit('auth_response', {'status': 'ok', 'username': u, 'role': user[1] or 'user', 'avatar': user[2] or ''})
-            broadcast_users()
-        else:
-            emit('auth_response', {'status': 'error', 'message': 'Неверный логин или пароль'})
-    except Exception as e:
-        if conn: conn.close()
-        emit('auth_response', {'status': 'error', 'message': 'Ошибка авторизации на сервере'})
-
-@socketio.on('register')
-def on_register(data):
-    u = str(data.get('username', '')).strip()
-    p = str(data.get('password', '')).strip()
-    if not u or not p:
-        emit('auth_response', {'status': 'error', 'message': 'Введите логин и пароль'})
-        return
-    role = 'admin' if u.lower() == 'totr' else 'user'
-    conn, db_type = get_db()
-    cur = conn.cursor()
-    try:
-        if db_type == 'postgres':
-            cur.execute("SELECT id FROM users WHERE LOWER(username)=LOWER(%s)", (u,))
-        else:
-            cur.execute("SELECT id FROM users WHERE LOWER(username)=LOWER(?)", (u,))
-        existing = cur.fetchone()
-        if existing:
-            if db_type == 'postgres':
-                cur.execute("UPDATE users SET password=%s, role=%s WHERE id=%s", (p, role, existing[0]))
-            else:
-                cur.execute("UPDATE users SET password=?, role=? WHERE id=?", (p, role, existing[0]))
-        else:
-            if db_type == 'postgres':
-                cur.execute("INSERT INTO users (username, password, role) VALUES (%s, %s, %s)", (u, p, role))
-            else:
-                cur.execute("INSERT INTO users (username, password, role) VALUES (?, ?, ?)", (u, p, role))
-        conn.commit()
-        conn.close()
-        online_users[u] = request.sid
-        user_sockets[request.sid] = u
-        join_room(u)
-        emit('auth_response', {'status': 'ok', 'username': u, 'role': role, 'avatar': ''})
-        broadcast_users()
-    except Exception as e:
-        if conn: conn.close()
-        emit('auth_response', {'status': 'error', 'message': 'Ошибка регистрации'})
-
-@socketio.on('disconnect')
-def on_disconnect():
-    u = user_sockets.get(request.sid)
-    if u:
-        if u in online_users: del online_users[u]
-        del user_sockets[request.sid]
-        conn, db_type = get_db()
-        cur = conn.cursor()
-        now = time.time()
-        try:
-            if db_type == 'postgres':
-                cur.execute("UPDATE users SET last_seen=%s WHERE username=%s", (now, u))
-            else:
-                cur.execute("UPDATE users SET last_seen=? WHERE username=?", (now, u))
-            conn.commit()
-        except Exception:
-            pass
-        conn.close()
-        broadcast_users()
-
-def broadcast_users():
-    conn, db_type = get_db()
-    cur = conn.cursor()
-    try:
-        cur.execute("SELECT username, avatar, last_seen FROM users")
-        users = [{'username': r[0], 'avatar': r[1] or '', 'online': r[0] in online_users, 'last_seen': r[2] or 0} for r in cur.fetchall()]
-    except Exception:
-        users = []
-    conn.close()
-    emit('users_list', {'users': users}, broadcast=True)
-
-@socketio.on('get_users')
-def on_get_users():
-    broadcast_users()
-
-@socketio.on('get_channels')
-def on_get_channels():
-    emit('channels_list', {'channels': channels})
-
-@socketio.on('create_channel')
-def on_create_channel(data):
-    name = data.get('name')
-    if name and not any(c['name'] == name for c in channels):
-        channels.append({'name': name})
-        emit('channels_list', {'channels': channels}, broadcast=True)
-
-# --- СООБЩЕНИЯ И ИСТОРИЯ ---
-
-@socketio.on('load_history')
-def on_load_history(data):
-    u = data.get('user')
-    target = data.get('target')
-    conn, db_type = get_db()
-    cur = conn.cursor()
-    if target.startswith('#'):
-        if db_type == 'postgres':
-            cur.execute("SELECT id, sender, target, message, msg_type, ttl, reply_to, reply_text, is_read, is_edited, reactions FROM messages WHERE target=%s ORDER BY id ASC", (target,))
-        else:
-            cur.execute("SELECT id, sender, target, message, msg_type, ttl, reply_to, reply_text, is_read, is_edited, reactions FROM messages WHERE target=? ORDER BY id ASC", (target,))
-    else:
-        if db_type == 'postgres':
-            cur.execute("SELECT id, sender, target, message, msg_type, ttl, reply_to, reply_text, is_read, is_edited, reactions FROM messages WHERE (sender=%s AND target=%s) OR (sender=%s AND target=%s) ORDER BY id ASC", (u, target, target, u))
-        else:
-            cur.execute("SELECT id, sender, target, message, msg_type, ttl, reply_to, reply_text, is_read, is_edited, reactions FROM messages WHERE (sender=? AND target=?) OR (sender=? AND target=?) ORDER BY id ASC", (u, target, target, u))
-    rows = cur.fetchall()
-    conn.close()
-    msgs = [{
-        'id': r[0], 'sender': r[1], 'target': r[2], 'msg': r[3], 'msg_type': r[4],
-        'ttl': r[5], 'reply_to': r[6], 'reply_text': r[7], 'is_read': r[8],
-        'is_edited': r[9], 'reactions': r[10]
-    } for r in rows]
-    emit('history_loaded', {'messages': msgs})
-
-@socketio.on('send_msg')
-def on_send_msg(data):
-    s = data.get('sender')
-    t = data.get('target')
-    m = data.get('msg')
-    mt = data.get('msg_type', 'text')
-    ttl = data.get('ttl', 0)
-    rt = data.get('reply_to')
-    rtx = data.get('reply_text', '')
-
-    conn, db_type = get_db()
-    cur = conn.cursor()
-    if db_type == 'postgres':
-        cur.execute("INSERT INTO messages (sender, target, message, msg_type, ttl, reply_to, reply_text) VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id", (s, t, m, mt, ttl, rt, rtx))
-        msg_id = cur.fetchone()[0]
-    else:
-        cur.execute("INSERT INTO messages (sender, target, message, msg_type, ttl, reply_to, reply_text) VALUES (?, ?, ?, ?, ?, ?, ?)", (s, t, m, mt, ttl, rt, rtx))
-        msg_id = cur.lastrowid
-    conn.commit()
-    conn.close()
-
-    msg_data = {
-        'id': msg_id, 'sender': s, 'target': t, 'msg': m, 'msg_type': mt,
-        'ttl': ttl, 'reply_to': rt, 'reply_text': rtx, 'is_read': 0,
-        'is_edited': 0, 'reactions': '{}'
-    }
-
-    if t.startswith('#'):
-        emit('new_msg', msg_data, broadcast=True)
-    else:
-        emit('new_msg', msg_data, room=t)
-        emit('new_msg', msg_data, room=s)
-        send_web_push(t, f"Новое сообщение от @{s}", m if mt == 'text' else 'Вложение')
-
-@socketio.on('mark_read')
-def on_mark_read(data):
-    u = data.get('user')
-    t = data.get('target')
-    conn, db_type = get_db()
-    cur = conn.cursor()
-    if db_type == 'postgres':
-        cur.execute("UPDATE messages SET is_read=1 WHERE sender=%s AND target=%s", (t, u))
-    else:
-        cur.execute("UPDATE messages SET is_read=1 WHERE sender=? AND target=?", (t, u))
-    conn.commit()
-    conn.close()
-    emit('messages_read', {'user': u, 'target': t}, room=t)
-
-@socketio.on('delete_msg')
-def on_delete_msg(data):
-    mid = data.get('msg_id')
-    conn, db_type = get_db()
-    cur = conn.cursor()
-    if db_type == 'postgres':
-        cur.execute("DELETE FROM messages WHERE id=%s", (mid,))
-    else:
-        cur.execute("DELETE FROM messages WHERE id=?", (mid,))
-    conn.commit()
-    conn.close()
-    emit('msg_deleted', {'msg_id': mid}, broadcast=True)
-
-@socketio.on('edit_msg')
-def on_edit_msg(data):
-    mid = data.get('msg_id')
-    txt = data.get('new_text')
-    conn, db_type = get_db()
-    cur = conn.cursor()
-    if db_type == 'postgres':
-        cur.execute("UPDATE messages SET message=%s, is_edited=1 WHERE id=%s", (txt, mid))
-    else:
-        cur.execute("UPDATE messages SET message=?, is_edited=1 WHERE id=?", (txt, mid))
-    conn.commit()
-    conn.close()
-    emit('msg_edited', {'msg_id': mid, 'new_text': txt}, broadcast=True)
-
-@socketio.on('update_avatar')
-def on_update_avatar(data):
-    u = data.get('user')
-    av = data.get('avatar')
-    conn, db_type = get_db()
-    cur = conn.cursor()
-    if db_type == 'postgres':
-        cur.execute("UPDATE users SET avatar=%s WHERE username=%s", (av, u))
-    else:
-        cur.execute("UPDATE users SET avatar=? WHERE username=?", (av, u))
-    conn.commit()
-    conn.close()
-    emit('avatar_updated', {'user': u, 'avatar': av}, broadcast=True)
-
-@socketio.on('user_typing')
-def on_user_typing(data):
-    emit('display_typing', data, room=data.get('target'))
-
-# --- ЛОГИКА ИГРЫ МАФИЯ ---
-
-@socketio.on('mafia_get_rooms')
-def on_mafia_get_rooms():
-    rooms_summary = [{'name': name, 'count': len(room['players']), 'started': room['started']} for name, room in mafia_rooms.items()]
-    emit('mafia_rooms_list', {'rooms': rooms_summary})
-
-@socketio.on('mafia_create_room')
-def on_mafia_create_room(data):
-    rname = data.get('room_name')
-    user = data.get('user')
-    if rname and rname not in mafia_rooms:
-        mafia_rooms[rname] = {
-            'creator': user,
-            'players': [user],
-            'roles': {},
-            'started': False
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Спецзвязочок Ultra</title>
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#1F6AA5">
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <style>
+        :root {
+            --bg-color: #121212;
+            --panel-bg: #1e1e1e;
+            --panel-border: #2d2d2d;
+            --text-color: #ffffff;
+            --accent-color: #1F6AA5;
+            --item-hover: #2a2a2a;
         }
-        join_room('mafia_' + rname)
-        emit('mafia_room_joined', {'room_name': rname, 'players': [user], 'is_creator': True})
-        on_mafia_get_rooms()
 
-@socketio.on('mafia_join_room')
-def on_mafia_join_room(data):
-    rname = data.get('room_name')
-    user = data.get('user')
-    if rname in mafia_rooms and not mafia_rooms[rname]['started']:
-        if user not in mafia_rooms[rname]['players']:
-            mafia_rooms[rname]['players'].append(user)
-        join_room('mafia_' + rname)
-        is_creator = (mafia_rooms[rname]['creator'] == user)
-        emit('mafia_room_joined', {'room_name': rname, 'players': mafia_rooms[rname]['players'], 'is_creator': is_creator}, room=request.sid)
-        emit('mafia_update_players', {'players': mafia_rooms[rname]['players']}, room='mafia_' + rname)
-        on_mafia_get_rooms()
+        body.light-theme {
+            --bg-color: #f4f5f7;
+            --panel-bg: #ffffff;
+            --panel-border: #e0e0e0;
+            --text-color: #111111;
+            --accent-color: #0078d4;
+            --item-hover: #eef2f5;
+        }
 
-@socketio.on('mafia_start_game')
-def on_mafia_start_game(data):
-    rname = data.get('room_name')
-    if rname in mafia_rooms and len(mafia_rooms[rname]['players']) >= 3:
-        room = mafia_rooms[rname]
-        room['started'] = True
-        players = list(room['players'])
-        random.shuffle(players)
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+        html, body { width: 100vw; height: 100dvh; overflow: hidden; background: var(--bg-color); color: var(--text-color); position: fixed; top: 0; left: 0; transition: background 0.3s, color 0.3s; }
         
-        roles = {}
-        roles[players[0]] = 'Мафия 🔪'
-        roles[players[1]] = 'Детектив 🕵️'
-        for p in players[2:]:
-            roles[p] = 'Мирный житель 👨'
+        #auth-screen { display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100dvh; padding: 20px; }
+        .auth-box { background: var(--panel-bg); padding: 25px; border-radius: 16px; width: 100%; max-width: 340px; text-align: center; border: 1px solid var(--panel-border); }
+        .auth-box h2 { margin-bottom: 15px; color: #3B8ED0; }
+        input[type="text"], input[type="password"] { width: 100%; padding: 12px; margin: 8px 0; border-radius: 10px; border: 1px solid var(--panel-border); background: var(--bg-color); color: var(--text-color); outline: none; font-size: 16px; }
+        button { width: 100%; padding: 12px; margin-top: 10px; border-radius: 10px; border: none; background: var(--accent-color); color: #fff; font-weight: bold; cursor: pointer; font-size: 15px; }
         
-        room['roles'] = roles
-        for p in players:
-            sid = online_users.get(p)
-            if sid:
-                emit('mafia_game_started', {'role': roles[p]}, room=sid)
+        #app-screen { display: none; height: 100dvh; width: 100vw; position: relative; overflow: hidden; }
+        #sidebar-overlay { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100dvh; background: rgba(0,0,0,0.6); z-index: 9; }
+        #sidebar-overlay.active { display: block; }
 
-# --- МОДУЛЬ ЗВОНКОВ (WEBRTC И PUSH) ---
+        #sidebar { width: 280px; background: var(--panel-bg); border-right: 2px solid var(--panel-border); display: flex; flex-direction: column; flex-shrink: 0; z-index: 10; height: 100dvh; transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1); }
+        .sidebar-header { padding: 12px 15px; background: var(--panel-bg); border-bottom: 1px solid var(--panel-border); font-weight: bold; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+        .chat-list { flex: 1; overflow-y: auto; padding: 10px; }
+        .section-title { font-size: 11px; text-transform: uppercase; color: #888; margin: 12px 8px 6px 8px; font-weight: bold; display: flex; justify-content: space-between; align-items: center; }
+        
+        .chat-item { padding: 10px 12px; border-radius: 8px; cursor: pointer; margin-bottom: 4px; display: flex; align-items: center; gap: 10px; font-size: 14px; background: transparent; transition: background 0.2s; position: relative; }
+        .chat-item:hover, .chat-item.active { background: var(--item-hover); }
+        
+        .avatar { width: 34px; height: 34px; border-radius: 50%; background: #3B8ED0; display: flex; align-items: center; justify-content: center; font-weight: bold; color: #fff; font-size: 14px; flex-shrink: 0; background-size: cover; background-position: center; cursor: pointer; }
 
-@socketio.on('call_start')
-def on_call_start(data):
-    caller = data.get('caller')
-    target = data.get('target')
-    call_type = data.get('call_type', 'audio')
-    
-    sorted_pair = sorted([caller, target])
-    room_id = f"call_{sorted_pair[0]}_{sorted_pair[1]}"
+        #chat-main { flex: 1; display: flex; flex-direction: column; background: var(--bg-color); min-width: 0; height: 100dvh; position: relative; }
+        header { height: 56px; background: var(--panel-bg); padding: 0 12px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--panel-border); flex-shrink: 0; width: 100%; }
+        .header-left { display: flex; align-items: center; gap: 8px; }
+        .toggle-btn { width: 36px; height: 36px; background: var(--item-hover); border: 1px solid var(--panel-border); font-size: 18px; border-radius: 8px; color: var(--text-color); cursor: pointer; display: flex; align-items: center; justify-content: center; }
 
-    active_calls[room_id] = {
-        'caller': caller,
-        'target': target,
-        'call_type': call_type,
-        'offer': data.get('offer'),
-        'roomId': room_id
-    }
+        .chat-container { flex: 1; overflow-y: auto; padding: 15px 12px 75px 12px; display: flex; flex-direction: column; gap: 10px; }
+        
+        .message { max-width: 85%; padding: 8px 12px; border-radius: 12px; font-size: 14px; position: relative; display: flex; flex-direction: column; gap: 3px; word-wrap: break-word; }
+        .msg-me { background: var(--accent-color); color: #fff; align-self: flex-end; }
+        .msg-other { background: var(--panel-bg); border: 1px solid var(--panel-border); align-self: flex-start; }
+        
+        .video-note { width: 140px; height: 140px; border-radius: 50%; object-fit: cover; border: 2px solid var(--panel-border); background: #000; cursor: pointer; }
 
-    call_title = "📹 Входящий видеозвонок" if call_type == 'video' else "📞 Входящий звонок"
-    send_web_push(target, f"{call_title} от @{caller}", "Нажмите, чтобы ответить", room_id)
+        footer { position: absolute; bottom: 0; left: 0; right: 0; min-height: 56px; background: var(--panel-bg); padding: 6px 10px; display: flex; gap: 6px; border-top: 1px solid var(--panel-border); align-items: center; }
+        footer input[type="text"] { flex: 1; height: 38px; background: var(--bg-color); color: var(--text-color); border: 1px solid var(--panel-border); border-radius: 10px; padding: 0 12px; font-size: 15px; outline: none; }
+        .icon-btn { background: var(--item-hover); border: 1px solid var(--panel-border); border-radius: 8px; width: 36px; height: 38px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--text-color); flex-shrink: 0; font-size: 14px; }
+        .recording { background: #c62828 !important; color: #fff !important; }
 
-    if target in online_users:
-        emit('incoming_call', active_calls[room_id], room=target)
+        .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100dvh; background: rgba(0,0,0,0.85); z-index: 1000; justify-content: center; align-items: center; padding: 15px; }
+        .modal-box { background: var(--panel-bg); border: 1px solid var(--panel-border); border-radius: 12px; width: 100%; max-width: 480px; max-height: 90vh; display: flex; flex-direction: column; overflow: hidden; }
+        .modal-header { padding: 15px; background: var(--item-hover); border-bottom: 1px solid var(--panel-border); display: flex; justify-content: space-between; align-items: center; }
+        .modal-body { padding: 15px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 12px; }
 
-@socketio.on('call_accept')
-def on_call_accept(data):
-    target = data.get('target')
-    emit('call_accepted', data, room=target)
+        #emoji-picker { display: none; position: absolute; bottom: 60px; left: 10px; background: var(--panel-bg); border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px; grid-template-columns: repeat(5, 1fr); gap: 8px; z-index: 100; font-size: 20px; }
 
-@socketio.on('call_end')
-def on_call_end(data):
-    target = data.get('target')
-    caller = data.get('caller')
-    room_id = data.get('roomId')
+        #lightbox { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100dvh; background: rgba(0,0,0,0.9); z-index: 5000; justify-content: center; align-items: center; }
+        #lightbox img, #lightbox video { max-width: 90%; max-height: 90%; border-radius: 12px; }
 
-    if room_id in active_calls:
-        del active_calls[room_id]
+        /* ИНТЕРФЕЙС ЗВОНКОВ */
+        #direct-video-screen { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100dvh; background: #000; z-index: 4000; flex-direction: column; justify-content: space-between; }
+        #remote-video { width: 100%; height: 100%; object-fit: cover; }
+        #local-video-preview { position: absolute; top: 20px; right: 20px; width: 110px; height: 150px; border-radius: 10px; object-fit: cover; border: 2px solid #fff; z-index: 4001; }
+        .call-controls { position: absolute; bottom: 30px; left: 0; right: 0; display: flex; justify-content: center; gap: 15px; z-index: 4002; }
 
-    if target: emit('call_ended', data, room=target)
-    if caller: emit('call_ended', data, room=caller)
+        #call-modal { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100dvh; background: rgba(0,0,0,0.85); z-index: 3000; flex-direction: column; justify-content: center; align-items: center; gap: 20px; }
 
-@socketio.on('call_signal')
-def on_call_signal(data):
-    target = data.get('target')
-    if target in online_users:
-        emit('call_signal', data, room=target)
+        @media (max-width: 600px) {
+            #sidebar { position: fixed; left: 0; top: 0; bottom: 0; width: 80%; max-width: 280px; transform: translateX(-100%); }
+            #sidebar.open { transform: translateX(0); }
+        }
+    </style>
+</head>
+<body>
 
-@socketio.on('save_push_subscription')
-def on_save_push(data):
-    user = data.get('user')
-    sub = data.get('subscription')
-    if user and sub:
-        push_subscriptions[user] = sub
+    <div id="auth-screen">
+        <div class="auth-box">
+            <h2>Спецзвязочок</h2>
+            <input type="text" id="username" placeholder="Логин">
+            <input type="password" id="password" placeholder="Пароль">
+            <button onclick="login()">Войти</button>
+            <button onclick="register()" style="background: transparent; border: 1px solid #1F6AA5;">Регистрация</button>
+            <div id="status" style="margin-top:10px; font-size:13px; color:#ff5555;"></div>
+        </div>
+    </div>
 
-@app.route('/')
-def index():
-    return render_template('index.html', vapid_public_key=VAPID_PUBLIC_KEY)
+    <div id="app-screen">
+        <div id="sidebar-overlay" onclick="closeSidebar()"></div>
 
-@app.route('/sw.js')
-def sw():
-    return send_from_directory('static', 'sw.js')
+        <div id="sidebar">
+            <div class="sidebar-header">
+                <div style="display:flex; align-items:center; gap:8px;" onclick="openProfileModal()">
+                    <div id="my-avatar" class="avatar">?</div>
+                    <span id="user-display" style="font-size:14px;">...</span>
+                </div>
+                <button onclick="logout()" style="width:auto; padding:4px 8px; font-size:12px; background:transparent; border:1px solid #555;">Выйти</button>
+            </div>
+            <div class="chat-list">
+                <div class="chat-item" onclick="openMafiaModal()" style="border: 1px solid #3B8ED0; margin-bottom: 10px; background: rgba(31, 106, 165, 0.2);">
+                    <div class="avatar" style="background:#d32f2f;">🕵️</div>
+                    <span><b>Мафия онлайн</b></span>
+                </div>
 
-if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))
-    socketio.run(app, host='0.0.0.0', port=port)
+                <div class="section-title">Каналы</div>
+                <div id="channels-list"></div>
+                <div class="section-title">Личные чаты</div>
+                <div id="users-list"></div>
+            </div>
+        </div>
+
+        <div id="chat-main">
+            <header>
+                <div class="header-left">
+                    <button class="toggle-btn" onclick="toggleSidebar()">☰</button>
+                    <h3 id="chat-title">#general</h3>
+                </div>
+                <div style="display:flex; gap:6px;">
+                    <button id="call-video-btn" class="icon-btn" style="display:none; background:#2e7d32;" onclick="startDirectCall('video')">📹 Видео</button>
+                    <button id="call-audio-btn" class="icon-btn" style="display:none;" onclick="startDirectCall('audio')">📞 Аудио</button>
+                </div>
+            </header>
+
+            <div class="chat-container" id="messages"></div>
+
+            <div id="emoji-picker">
+                <span onclick="addEmoji('👍')">👍</span><span onclick="addEmoji('❤️')">❤️</span><span onclick="addEmoji('🔥')">🔥</span>
+                <span onclick="addEmoji('😂')">😂</span><span onclick="addEmoji('😮')">😮</span>
+            </div>
+
+            <footer>
+                <label class="icon-btn" title="Прикрепить файл">
+                    📎
+                    <input type="file" id="file-input" style="display:none;" onchange="sendFile()">
+                </label>
+                <button class="icon-btn" onclick="toggleEmojiPicker()">😀</button>
+                <input type="text" id="msg-input" placeholder="Сообщение..." onkeypress="if(event.key==='Enter') sendMsg()">
+                <button id="voice-record-btn" class="icon-btn" onclick="toggleVoiceRecord()">🎤</button>
+                <button id="video-record-btn" class="icon-btn" onclick="toggleVideoNoteRecord()">📹</button>
+                <button onclick="sendMsg()" style="width:40px; margin:0;">></button>
+            </footer>
+        </div>
+    </div>
+
+    <!-- ОКНО ПРОФИЛЯ -->
+    <div id="profile-modal" class="modal-overlay">
+        <div class="modal-box">
+            <div class="modal-header">
+                <h3>👤 Настройки Профиля</h3>
+                <button onclick="closeProfileModal()" style="width:auto; padding:4px 8px; background:#444;">✕</button>
+            </div>
+            <div class="modal-body">
+                <label style="background:#333; padding:10px; border-radius:8px; border:1px solid #555; font-size:13px; cursor:pointer; text-align:center;">
+                    📷 Изменить аватарку
+                    <input type="file" id="avatar-input" accept="image/*" style="display:none;" onchange="uploadAvatar()">
+                </label>
+                <button onclick="requestPush()" style="background:#1F6AA5;">🔔 Разрешить Push-уведомления</button>
+                <button onclick="toggleTheme()" style="background:#444;">🌗 Сменить тему</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ИНТЕРФЕЙС ВИДЕОЗВОНКА -->
+    <div id="direct-video-screen">
+        <video id="local-video-preview" autoplay muted playsinline></video>
+        <video id="remote-video" autoplay playsinline></video>
+        <div class="call-controls">
+            <button class="icon-btn" style="background:#c62828; width:50px; height:50px; border-radius:50%; font-size:20px;" onclick="endCall()">📞</button>
+        </div>
+    </div>
+
+    <!-- ВХОДЯЩИЙ ЗВОНОК -->
+    <div id="call-modal">
+        <div id="call-user-avatar" class="avatar" style="width:80px; height:80px; font-size:32px;">?</div>
+        <h3 id="call-user-name">Звонок...</h3>
+        <p id="call-status-text" style="color:#aaa;">Входящий вызов</p>
+        <div style="display:flex; gap:15px;">
+            <button id="accept-call-btn" style="background:#2e7d32; width:auto; padding:10px 20px;" onclick="acceptCall()">Принять</button>
+            <button style="background:#c62828; width:auto; padding:10px 20px;" onclick="endCall()">Сбросить</button>
+        </div>
+    </div>
+
+    <!-- ОКНО МАФИИ -->
+    <div id="mafia-modal" class="modal-overlay">
+        <div class="modal-box">
+            <div class="modal-header">
+                <h3>🕵️ Игра Мафия</h3>
+                <button onclick="closeMafiaModal()" style="width:auto; padding:4px 8px; background:#444;">✕</button>
+            </div>
+            <div class="modal-body">
+                <div style="display:flex; gap:6px;">
+                    <input type="text" id="mafia-room-input" placeholder="Имя комнаты">
+                    <button onclick="createMafiaRoom()" style="width:auto; padding:0 12px; margin:0;">Создать</button>
+                </div>
+                <div class="section-title">Список комнат</div>
+                <div id="mafia-rooms-list" style="display:flex; flex-direction:column; gap:6px;"></div>
+                <div id="mafia-game-area" style="display:none; text-align:center; margin-top:15px; border-top:1px solid #444; padding-top:10px;">
+                    <h4 id="mafia-room-title"></h4>
+                    <p id="mafia-players-list" style="font-size:12px; color:#aaa; margin:5px 0;"></p>
+                    <div id="mafia-role-box" style="font-size:18px; font-weight:bold; color:#3B8ED0; margin:10px 0;"></div>
+                    <button id="mafia-start-btn" onclick="startMafiaGame()" style="display:none; background:#2e7d32;">Начать игру</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ЛАЙТБОКС -->
+    <div id="lightbox" onclick="closeLightbox()">
+        <img id="lightbox-img" src="" style="display:none;">
+        <video id="lightbox-video" controls autoplay loop playsinline style="display:none;"></video>
+    </div>
+
+    <audio id="direct-call-audio" autoplay playsinline style="display:none;"></audio>
+
+    <script>
+        const socket = io({ reconnection: true });
+        let currentUser = "";
+        let currentTarget = "#general";
+        let activeCallPeer = null;
+        let directCallStream = null;
+        let incomingCallData = null;
+        let activeCallRoomId = "";
+        let currentMafiaRoom = "";
+        let mediaRecorder = null;
+        let videoRecorder = null;
+        let audioChunks = [], videoChunks = [];
+        let isRecording = false, isVideoRecording = false;
+
+        const VAPID_PUBLIC_KEY = "{{ vapid_public_key }}";
+        const iceServers = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/sw.js');
+        }
+
+        function login() {
+            const u = document.getElementById('username').value.trim();
+            const p = document.getElementById('password').value.trim();
+            if (u && p) socket.emit('login', { username: u, password: p });
+        }
+
+        function register() {
+            const u = document.getElementById('username').value.trim();
+            const p = document.getElementById('password').value.trim();
+            if (u && p) socket.emit('register', { username: u, password: p });
+        }
+
+        function logout() { localStorage.clear(); location.reload(); }
+
+        socket.on('auth_response', (data) => {
+            if (data.status === 'ok') {
+                currentUser = data.username;
+                document.getElementById('auth-screen').style.display = 'none';
+                document.getElementById('app-screen').style.display = 'flex';
+                document.getElementById('user-display').innerText = currentUser;
+                socket.emit('get_channels');
+                socket.emit('get_users');
+                switchChat('#general');
+                requestPush();
+            } else {
+                document.getElementById('status').innerText = data.message;
+            }
+        });
+
+        async function requestPush() {
+            if ("Notification" in window) {
+                const p = await Notification.requestPermission();
+                if (p === 'granted' && VAPID_PUBLIC_KEY) {
+                    try {
+                        const reg = await navigator.serviceWorker.ready;
+                        const sub = await reg.pushManager.subscribe({
+                            userVisibleOnly: true,
+                            applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
+                        });
+                        socket.emit('save_push_subscription', { user: currentUser, subscription: sub });
+                    } catch(e){}
+                }
+            }
+        }
+
+        function urlBase64ToUint8Array(base64String) {
+            const padding = '='.repeat((4 - base64String.length % 4) % 4);
+            const base64 = (base64String + padding).replace(/\\-/g, '+').replace(/_/g, '/');
+            const rawData = window.atob(base64);
+            return Uint8Array.from([...rawData].map((char) => char.charCodeAt(0)));
+        }
+
+        function toggleTheme() {
+            document.body.classList.toggle('light-theme');
+        }
+
+        function toggleSidebar() { document.getElementById('sidebar').classList.toggle('open'); }
+        function closeSidebar() { document.getElementById('sidebar').classList.remove('open'); }
+
+        function openProfileModal() { document.getElementById('profile-modal').style.display = 'flex'; }
+        function closeProfileModal() { document.getElementById('profile-modal').style.display = 'none'; }
+
+        function switchChat(target) {
+            currentTarget = target;
+            const isGroup = target.startsWith('#');
+            document.getElementById('chat-title').innerText = target;
+            document.getElementById('call-video-btn').style.display = (!isGroup && target !== currentUser) ? 'inline-flex' : 'none';
+            document.getElementById('call-audio-btn').style.display = (!isGroup && target !== currentUser) ? 'inline-flex' : 'none';
+            document.getElementById('messages').innerHTML = '';
+            closeSidebar();
+            socket.emit('load_history', { user: currentUser, target: currentTarget });
+        }
+
+        socket.on('channels_list', (data) => {
+            const list = document.getElementById('channels-list');
+            list.innerHTML = '';
+            data.channels.forEach(ch => {
+                const div = document.createElement('div');
+                div.className = 'chat-item';
+                div.innerText = ch.name;
+                div.onclick = () => switchChat(ch.name);
+                list.appendChild(div);
+            });
+        });
+
+        socket.on('users_list', (data) => {
+            const list = document.getElementById('users-list');
+            list.innerHTML = '';
+            data.users.forEach(u => {
+                if (u.username === currentUser) return;
+                const div = document.createElement('div');
+                div.className = 'chat-item';
+                div.innerHTML = `<span>${u.username}</span> ${u.online ? '🟢' : '⚪'}`;
+                div.onclick = () => switchChat(u.username);
+                list.appendChild(div);
+            });
+        });
+
+        function sendMsg() {
+            const txt = document.getElementById('msg-input').value.trim();
+            if (!txt) return;
+            socket.emit('send_msg', { sender: currentUser, target: currentTarget, msg: txt, msg_type: 'text' });
+            document.getElementById('msg-input').value = '';
+        }
+
+        function sendFile() {
+            const file = document.getElementById('file-input').files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const b64Data = e.target.result.split(',')[1];
+                socket.emit('send_msg', {
+                    sender: currentUser, target: currentTarget,
+                    msg: JSON.stringify({ name: file.name, data: b64Data }), msg_type: 'file'
+                });
+                document.getElementById('file-input').value = '';
+            };
+            reader.readAsDataURL(file);
+        }
+
+        async function toggleVoiceRecord() {
+            const btn = document.getElementById('voice-record-btn');
+            if (!isRecording) {
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    mediaRecorder = new MediaRecorder(stream);
+                    audioChunks = [];
+                    mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+                    mediaRecorder.onstop = () => {
+                        const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                        const reader = new FileReader();
+                        reader.onloadend = () => {
+                            socket.emit('send_msg', {
+                                sender: currentUser, target: currentTarget,
+                                msg: reader.result.split(',')[1], msg_type: 'voice'
+                            });
+                        };
+                        reader.readAsDataURL(audioBlob);
+                    };
+                    mediaRecorder.start();
+                    isRecording = true;
+                    btn.classList.add('recording');
+                } catch (err) { alert('Микрофон недоступен: ' + err); }
+            } else {
+                mediaRecorder.stop();
+                isRecording = false;
+                btn.classList.remove('recording');
+            }
+        }
+
+        async function toggleVideoNoteRecord() {
+            const btn = document.getElementById('video-record-btn');
+            if (!isVideoRecording) {
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 300, height: 300 }, audio: true });
+                    videoRecorder = new MediaRecorder(stream);
+                    videoChunks = [];
+                    videoRecorder.ondataavailable = e => videoChunks.push(e.data);
+                    videoRecorder.onstop = () => {
+                        const videoBlob = new Blob(videoChunks, { type: 'video/webm' });
+                        const reader = new FileReader();
+                        reader.onloadend = () => {
+                            socket.emit('send_msg', {
+                                sender: currentUser, target: currentTarget,
+                                msg: reader.result.split(',')[1], msg_type: 'video_note'
+                            });
+                        };
+                        reader.readAsDataURL(videoBlob);
+                        stream.getTracks().forEach(t => t.stop());
+                    };
+                    videoRecorder.start();
+                    isVideoRecording = true;
+                    btn.classList.add('recording');
+                } catch (err) { alert('Камера/микрофон недоступны: ' + err); }
+            } else {
+                videoRecorder.stop();
+                isVideoRecording = false;
+                btn.classList.remove('recording');
+            }
+        }
+
+        function toggleEmojiPicker() {
+            const picker = document.getElementById('emoji-picker');
+            picker.style.display = picker.style.display === 'grid' ? 'none' : 'grid';
+        }
+
+        function addEmoji(emoji) {
+            document.getElementById('msg-input').value += emoji;
+            document.getElementById('emoji-picker').style.display = 'none';
+        }
+
+        socket.on('new_msg', (data) => {
+            if (data.target === currentTarget || data.sender === currentTarget || (data.target.startsWith('#') && data.target === currentTarget)) {
+                appendMessage(data);
+            }
+        });
+
+        socket.on('history_loaded', (data) => {
+            document.getElementById('messages').innerHTML = '';
+            data.messages.forEach(msg => appendMessage(msg));
+        });
+
+        function appendMessage(msg) {
+            const box = document.getElementById('messages');
+            const div = document.createElement('div');
+            div.className = 'message ' + (msg.sender === currentUser ? 'msg-me' : 'msg-other');
+            
+            let contentHtml = `<span>${msg.msg}</span>`;
+            if (msg.msg_type === 'file') {
+                try {
+                    const fileData = JSON.parse(msg.msg);
+                    if (/\.(jpg|jpeg|png|gif|webp)$/i.test(fileData.name)) {
+                        contentHtml = `<img src="data:image/jpeg;base64,${fileData.data}" style="max-width:180px; border-radius:8px; cursor:pointer;" onclick="openLightbox(this.src)">`;
+                    } else {
+                        contentHtml = `<a href="data:application/octet-stream;base64,${fileData.data}" download="${fileData.name}" style="color:#fff;">📁 ${fileData.name}</a>`;
+                    }
+                } catch(e) {}
+            } else if (msg.msg_type === 'voice') {
+                contentHtml = `<audio controls playsinline src="data:audio/webm;base64,${msg.msg}" style="height:32px; width:170px;"></audio>`;
+            } else if (msg.msg_type === 'video_note') {
+                contentHtml = `<video class="video-note" controls playsinline src="data:video/webm;base64,${msg.msg}" onclick="openVideoLightbox(this.src)"></video>`;
+            }
+
+            div.innerHTML = `<b>${msg.sender}</b><div>${contentHtml}</div>`;
+            box.appendChild(div);
+            box.scrollTop = box.scrollHeight;
+        }
+
+        function openLightbox(src) {
+            document.getElementById('lightbox-video').style.display = 'none';
+            const img = document.getElementById('lightbox-img');
+            img.src = src; img.style.display = 'block';
+            document.getElementById('lightbox').style.display = 'flex';
+        }
+
+        function openVideoLightbox(src) {
+            document.getElementById('lightbox-img').style.display = 'none';
+            const vid = document.getElementById('lightbox-video');
+            vid.src = src; vid.style.display = 'block';
+            document.getElementById('lightbox').style.display = 'flex';
+        }
+
+        function closeLightbox() {
+            document.getElementById('lightbox').style.display = 'none';
+            document.getElementById('lightbox-video').pause();
+        }
+
+        // --- ЛОГИКА ЗВОНКОВ С ВИДЕОПОТОКОМ ---
+
+        async function startDirectCall(callType = 'audio') {
+            const sortedPair = [currentUser, currentTarget].sort();
+            activeCallRoomId = "private_call_" + sortedPair[0] + "_" + sortedPair[1];
+            
+            document.getElementById('call-modal').style.display = 'flex';
+            document.getElementById('call-user-name').innerText = '@' + currentTarget;
+            document.getElementById('call-status-text').innerText = 'Вызов...';
+
+            try {
+                const constraints = (callType === 'video') ? { video: true, audio: true } : { audio: true };
+                directCallStream = await navigator.mediaDevices.getUserMedia(constraints);
+
+                if (callType === 'video') {
+                    document.getElementById('direct-video-screen').style.display = 'flex';
+                    document.getElementById('local-video-preview').srcObject = directCallStream;
+                }
+
+                activeCallPeer = new RTCPeerConnection(iceServers);
+                directCallStream.getTracks().forEach(t => activeCallPeer.addTrack(t, directCallStream));
+
+                activeCallPeer.onicecandidate = e => {
+                    if (e.candidate) socket.emit('call_signal', { target: currentTarget, candidate: e.candidate });
+                };
+
+                activeCallPeer.ontrack = e => {
+                    if (callType === 'video') {
+                        document.getElementById('remote-video').srcObject = e.streams[0];
+                    } else {
+                        document.getElementById('direct-call-audio').srcObject = e.streams[0];
+                    }
+                };
+
+                const offer = await activeCallPeer.createOffer();
+                await activeCallPeer.setLocalDescription(offer);
+
+                socket.emit('call_start', {
+                    caller: currentUser,
+                    target: currentTarget,
+                    call_type: callType,
+                    offer: offer,
+                    roomId: activeCallRoomId
+                });
+            } catch(e) { alert("Не удалось получить доступ к камере/микрофону!"); endCall(); }
+        }
+
+        socket.on('incoming_call', (data) => {
+            incomingCallData = data;
+            document.getElementById('call-modal').style.display = 'flex';
+            document.getElementById('call-user-name').innerText = '@' + data.caller;
+            document.getElementById('call-status-text').innerText = (data.call_type === 'video' ? 'Входящий видеозвонок' : 'Входящий аудиозвонок');
+        });
+
+        async function acceptCall() {
+            document.getElementById('call-modal').style.display = 'none';
+            const isVideo = incomingCallData.call_type === 'video';
+
+            try {
+                const constraints = isVideo ? { video: true, audio: true } : { audio: true };
+                directCallStream = await navigator.mediaDevices.getUserMedia(constraints);
+
+                if (isVideo) {
+                    document.getElementById('direct-video-screen').style.display = 'flex';
+                    document.getElementById('local-video-preview').srcObject = directCallStream;
+                }
+
+                activeCallPeer = new RTCPeerConnection(iceServers);
+                directCallStream.getTracks().forEach(t => activeCallPeer.addTrack(t, directCallStream));
+
+                activeCallPeer.onicecandidate = e => {
+                    if (e.candidate) socket.emit('call_signal', { target: incomingCallData.caller, candidate: e.candidate });
+                };
+
+                activeCallPeer.ontrack = e => {
+                    if (isVideo) {
+                        document.getElementById('remote-video').srcObject = e.streams[0];
+                    } else {
+                        document.getElementById('direct-call-audio').srcObject = e.streams[0];
+                    }
+                };
+
+                await activeCallPeer.setRemoteDescription(new RTCSessionDescription(incomingCallData.offer));
+                const answer = await activeCallPeer.createAnswer();
+                await activeCallPeer.setLocalDescription(answer);
+
+                socket.emit('call_accept', { target: incomingCallData.caller, answer: answer });
+            } catch(e) { alert("Ошибка соединения!"); endCall(); }
+        }
+
+        socket.on('call_accepted', async (data) => {
+            document.getElementById('call-modal').style.display = 'none';
+            if (activeCallPeer) await activeCallPeer.setRemoteDescription(new RTCSessionDescription(data.answer));
+        });
+
+        socket.on('call_signal', async (data) => {
+            if (activeCallPeer && data.candidate) await activeCallPeer.addIceCandidate(new RTCIceCandidate(data.candidate));
+        });
+
+        socket.on('call_ended', () => { endCallLocal(); });
+
+        function endCall() {
+            const target = incomingCallData ? incomingCallData.caller : currentTarget;
+            socket.emit('call_end', { target: target, caller: currentUser, roomId: activeCallRoomId });
+            endCallLocal();
+        }
+
+        function endCallLocal() {
+            if (directCallStream) directCallStream.getTracks().forEach(t => t.stop());
+            if (activeCallPeer) activeCallPeer.close();
+            activeCallPeer = null; directCallStream = null; incomingCallData = null;
+            document.getElementById('call-modal').style.display = 'none';
+            document.getElementById('direct-video-screen').style.display = 'none';
+        }
+
+        // --- ИНТЕРФЕЙС МАФИИ ---
+
+        function openMafiaModal() {
+            document.getElementById('mafia-modal').style.display = 'flex';
+            socket.emit('mafia_get_rooms');
+        }
+        function closeMafiaModal() { document.getElementById('mafia-modal').style.display = 'none'; }
+
+        function createMafiaRoom() {
+            const rname = document.getElementById('mafia-room-input').value.trim();
+            if (rname) socket.emit('mafia_create_room', { room_name: rname, user: currentUser });
+        }
+
+        socket.on('mafia_rooms_list', (data) => {
+            const list = document.getElementById('mafia-rooms-list');
+            list.innerHTML = '';
+            data.rooms.forEach(r => {
+                const div = document.createElement('div');
+                div.style.cssText = "display:flex; justify-content:space-between; background:var(--item-hover); padding:8px; border-radius:6px; align-items:center;";
+                div.innerHTML = `<span><b>${r.name}</b> (${r.count} игр.)</span> <button onclick="joinMafiaRoom('${r.name}')" style="width:auto; margin:0; padding:4px 8px;">Войти</button>`;
+                list.appendChild(div);
+            });
+        });
+
+        function joinMafiaRoom(rname) { socket.emit('mafia_join_room', { room_name: rname, user: currentUser }); }
+
+        socket.on('mafia_room_joined', (data) => {
+            currentMafiaRoom = data.room_name;
+            document.getElementById('mafia-game-area').style.display = 'block';
+            document.getElementById('mafia-room-title').innerText = "Комната: " + data.room_name;
+            document.getElementById('mafia-players-list').innerText = "Игроки: " + data.players.join(', ');
+            if (data.is_creator) document.getElementById('mafia-start-btn').style.display = 'inline-block';
+        });
+
+        socket.on('mafia_update_players', (data) => {
+            document.getElementById('mafia-players-list').innerText = "Игроки: " + data.players.join(', ');
+        });
+
+        function startMafiaGame() {
+            socket.emit('mafia_start_game', { room_name: currentMafiaRoom });
+        }
+
+        socket.on('mafia_game_started', (data) => {
+            document.getElementById('mafia-role-box').innerText = "Ваша роль: " + data.role;
+        });
+    </script>
+</body>
+</html>
