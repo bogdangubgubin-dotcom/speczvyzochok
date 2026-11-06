@@ -103,7 +103,7 @@ def send_web_push(target_user, title, body, room_id=""):
             vapid_private_key=VAPID_PRIVATE_KEY,
             vapid_claims=VAPID_CLAIMS
         )
-    except WebPushException as ex:
+    except Exception as ex:
         print(f"Push error for {target_user}:", ex)
 
 # --- АВТОРИЗАЦИЯ И РЕГИСТРАЦИЯ ---
@@ -279,6 +279,7 @@ def on_send_msg(data):
     else:
         emit('new_msg', msg_data, room=t)
         emit('new_msg', msg_data, room=s)
+        send_web_push(t, f"Новое сообщение от {s}", m)
 
 @socketio.on('mark_read')
 def on_mark_read(data):
@@ -293,51 +294,6 @@ def on_mark_read(data):
     conn.commit()
     conn.close()
     emit('messages_read', {'user': u, 'target': t}, room=t)
-
-@socketio.on('delete_msg')
-def on_delete_msg(data):
-    mid = data.get('msg_id')
-    conn, db_type = get_db()
-    cur = conn.cursor()
-    if db_type == 'postgres':
-        cur.execute("DELETE FROM messages WHERE id=%s", (mid,))
-    else:
-        cur.execute("DELETE FROM messages WHERE id=?", (mid,))
-    conn.commit()
-    conn.close()
-    emit('msg_deleted', {'msg_id': mid}, broadcast=True)
-
-@socketio.on('edit_msg')
-def on_edit_msg(data):
-    mid = data.get('msg_id')
-    txt = data.get('new_text')
-    conn, db_type = get_db()
-    cur = conn.cursor()
-    if db_type == 'postgres':
-        cur.execute("UPDATE messages SET message=%s, is_edited=1 WHERE id=%s", (txt, mid))
-    else:
-        cur.execute("UPDATE messages SET message=?, is_edited=1 WHERE id=?", (txt, mid))
-    conn.commit()
-    conn.close()
-    emit('msg_edited', {'msg_id': mid, 'new_text': txt}, broadcast=True)
-
-@socketio.on('update_avatar')
-def on_update_avatar(data):
-    u = data.get('user')
-    av = data.get('avatar')
-    conn, db_type = get_db()
-    cur = conn.cursor()
-    if db_type == 'postgres':
-        cur.execute("UPDATE users SET avatar=%s WHERE username=%s", (av, u))
-    else:
-        cur.execute("UPDATE users SET avatar=? WHERE username=?", (av, u))
-    conn.commit()
-    conn.close()
-    emit('avatar_updated', {'user': u, 'avatar': av}, broadcast=True)
-
-@socketio.on('user_typing')
-def on_user_typing(data):
-    emit('display_typing', data, room=data.get('target'))
 
 # --- ЛОГИКА ИГРЫ МАФИЯ ---
 
@@ -385,10 +341,10 @@ def on_mafia_start_game(data):
         random.shuffle(players)
         
         roles = {}
-        roles[players[0]] = 'Мафия'
-        roles[players[1]] = 'Детектив'
+        roles[players[0]] = 'Мафия 🔪'
+        roles[players[1]] = 'Детектив 🕵️'
         for p in players[2:]:
-            roles[p] = 'Мирный житель'
+            roles[p] = 'Мирный житель 👨'
         
         room['roles'] = roles
         for p in players:
@@ -418,31 +374,8 @@ def on_call_start(data):
     call_title = "📹 Входящий видеозвонок" if call_type == 'video' else "📞 Входящий звонок"
     send_web_push(target, f"{call_title} от @{caller}", "Нажмите, чтобы ответить", room_id)
 
-    call_msg = {
-        'id': int(time.time() * 1000),
-        'sender': caller,
-        'target': target,
-        'msg': f"{call_title}...",
-        'msg_type': 'call_card',
-        'roomId': room_id,
-        'call_type': call_type,
-        'is_read': 0,
-        'is_edited': 0
-    }
-
-    emit('new_msg', call_msg, room=target)
-    emit('new_msg', call_msg, room=caller)
-
     if target in online_users:
         emit('incoming_call', active_calls[room_id], room=target)
-
-@socketio.on('check_active_call')
-def on_check_active_call(data):
-    user = data.get('user')
-    for rid, call_data in active_calls.items():
-        if call_data['target'] == user:
-            emit('incoming_call', call_data, room=request.sid)
-            break
 
 @socketio.on('call_accept')
 def on_call_accept(data):
@@ -466,23 +399,6 @@ def on_call_signal(data):
     target = data.get('target')
     if target in online_users:
         emit('call_signal', data, room=target)
-
-@socketio.on('join_call')
-def on_join_call(data):
-    room_id = data.get('roomId')
-    join_room(room_id)
-    emit('user_joined_call', {'sid': request.sid}, room=room_id, include_self=False)
-
-@socketio.on('leave_call')
-def on_leave_call(data):
-    room_id = data.get('roomId')
-    leave_room(room_id)
-    emit('user_left_call', {'sid': request.sid}, room=room_id, include_self=False)
-
-@socketio.on('signal_to_peer')
-def on_signal_to_peer(data):
-    target_sid = data.get('targetSid')
-    emit('signal_from_peer', {'senderSid': request.sid, 'signal': data.get('signal')}, room=target_sid)
 
 @socketio.on('save_push_subscription')
 def on_save_push(data):
