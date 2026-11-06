@@ -82,21 +82,31 @@ def init_db():
     conn.commit()
     conn.close()
 
-init_db()
-
-def send_web_push(target_user, title, body, room_id=""):
-    sub = push_subscriptions.get(target_user)
-    if not sub or not VAPID_PRIVATE_KEY:
-        return
+@socketio.on('login')
+def on_login(data):
+    u = data.get('username')
+    p = data.get('password')
+    conn, db_type = get_db()
+    cur = conn.cursor()
     try:
-        webpush(
-            subscription_info=sub,
-            data=f'{{"title": "{title}", "body": "{body}", "roomId": "{room_id}"}}',
-            vapid_private_key=VAPID_PRIVATE_KEY,
-            vapid_claims=VAPID_CLAIMS
-        )
-    except WebPushException as ex:
-        print(f"Push error for {target_user}:", ex)
+        if db_type == 'postgres':
+            cur.execute("SELECT password, role, avatar FROM users WHERE username=%s", (u,))
+        else:
+            cur.execute("SELECT password, role, avatar FROM users WHERE username=?", (u,))
+        user = cur.fetchone()
+        conn.close()
+
+        if user and user[0] == p:
+            online_users[u] = request.sid
+            user_sockets[request.sid] = u
+            join_room(u)
+            emit('auth_response', {'status': 'ok', 'username': u, 'role': user[1], 'avatar': user[2]})
+            broadcast_users()
+        else:
+            emit('auth_response', {'status': 'error', 'message': 'Неверный логин или пароль'})
+    except Exception as e:
+        conn.close()
+        emit('auth_response', {'status': 'error', 'message': 'Ошибка БД при входе'})
 
 # --- АВТОРИЗАЦИЯ И ПОЛЬЗОВАТЕЛИ ---
 
