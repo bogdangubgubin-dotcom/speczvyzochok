@@ -163,8 +163,8 @@
         .video-card { background: #1a1a1a; border-radius: 12px; overflow: hidden; position: relative; border: 2px solid var(--panel-border); min-height: 180px; display: flex; align-items: center; justify-content: center; }
         .video-card video { width: 100%; height: 100%; object-fit: cover; }
         .video-card .user-label { position: absolute; bottom: 8px; left: 8px; background: rgba(0,0,0,0.7); padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: bold; }
-        .group-call-controls { display: flex; justify-content: center; gap: 12px; padding: 15px; background: var(--panel-bg); border-top: 1px solid var(--panel-border); }
-        .ctrl-btn { padding: 10px 18px; border-radius: 8px; border: none; background: var(--item-hover); color: #fff; font-weight: bold; cursor: pointer; font-size: 13px; }
+        .group-call-controls { display: flex; justify-content: center; gap: 8px; padding: 15px; background: var(--panel-bg); border-top: 1px solid var(--panel-border); flex-wrap: wrap; }
+        .ctrl-btn { padding: 10px 14px; border-radius: 8px; border: none; background: var(--item-hover); color: #fff; font-weight: bold; cursor: pointer; font-size: 12px; }
         .ctrl-btn.off { background: #d32f2f; }
         .btn-danger { background: #c62828; }
 
@@ -225,8 +225,8 @@
                     </div>
                 </div>
                 <div style="display:flex; align-items:center; gap:6px;">
-                    <button id="group-call-btn" class="icon-btn" style="height:32px; width:auto; padding:0 8px; font-size:12px; background:#2e7d32;" onclick="startGroupCall()" title="Групповой звонок">📞 Видеозвонок</button>
-                    <button id="call-btn" class="icon-btn" style="height:32px; width:36px; display:none;" onclick="startDirectCall()" title="Позвонить">📞</button>
+                    <button id="group-call-btn" class="icon-btn" style="height:32px; width:auto; padding:0 8px; font-size:12px; background:#2e7d32;" onclick="startGroupCall()" title="Комната видеозвонка">📞 Звонок</button>
+                    <button id="call-btn" class="icon-btn" style="height:32px; width:36px; display:none;" onclick="startDirectCall()" title="Личный звонок">📞</button>
                     <button class="icon-btn" style="height:32px; width:auto; padding:0 8px; font-size:12px;" onclick="openGalleryModal()">🖼️ Медиа</button>
                     <button id="admin-btn" class="admin-nav-btn" onclick="openAdminModal()">⚙️ Админка</button>
                 </div>
@@ -291,7 +291,7 @@
         </div>
     </div>
 
-    <!-- ЭКРАН ГРУППОВОГО WEBRTC ЗВОНКА -->
+    <!-- ЭКРАН ГРУППОВОГО/ИНДИВИДУАЛЬНОГО WEBRTC ЗВОНКА -->
     <div id="group-call-screen" class="hidden">
         <div id="video-grid" class="video-grid">
             <div class="video-card" id="local-user-card">
@@ -302,11 +302,12 @@
         <div class="group-call-controls">
             <button id="btn-group-mic" class="ctrl-btn" onclick="toggleGroupMic()">🎤 Микрофон: Вкл</button>
             <button id="btn-group-cam" class="ctrl-btn" onclick="toggleGroupCam()">📷 Камера: Вкл</button>
+            <button id="btn-flip-cam" class="ctrl-btn" onclick="toggleFlipCam()">🔄 Камера</button>
             <button class="ctrl-btn btn-danger" onclick="leaveGroupCall()">📞 Завершить</button>
         </div>
     </div>
 
-    <!-- ОКНО ГОЛОСОВОГО ЗВОНКА 1-НА-1 -->
+    <!-- ОКНО ГОЛОСОВОГО ВХОДЯЩЕГО ЗВОНКА 1-НА-1 -->
     <div id="call-modal">
         <div id="call-user-avatar" class="call-avatar">?</div>
         <h3 id="call-user-name">Звонок...</h3>
@@ -463,12 +464,13 @@
         let micAnimFrame = null;
         let peerConnections = {};
 
-        // Переменные для группового звонка
+        // ЗВОНКИ: ПЕРСОНАЛЬНЫЕ И ГРУППОВЫЕ КОМНАТЫ И ПЕРЕКЛЮЧЕНИЕ КАМЕР
         let groupLocalStream = null;
         let isGroupMicOn = true;
         let isGroupCamOn = true;
+        let currentFacingMode = 'user'; // 'user' (фронтальная) или 'environment' (задняя)
         const groupPeerConnections = {};
-        const callRoomId = "general-room";
+        let activeCallRoomId = "general-room";
 
         let mediaRecorder = null;
         let videoRecorder = null;
@@ -1174,7 +1176,7 @@
                     <div style="font-size: 12px; color: #aaa;">${isIncoming ? 'Вам звонят...' : 'Ожидание ответа...'}</div>
                     ${isIncoming ? `
                         <div class="call-card-btns">
-                            <button style="background: #2e7d32;" onclick="acceptCallFromCard('${msg.sender}')">Принять</button>
+                            <button style="background: #2e7d32;" onclick="acceptCallFromCard('${msg.sender}', '${msg.roomId || ''}')">Принять</button>
                             <button style="background: #c62828;" onclick="endCall()">Отклонить</button>
                         </div>
                     ` : `
@@ -1295,17 +1297,56 @@
             });
         }
 
-        // --- ЛОГИКА ГРУППОВОГО WEBRTC ЗВОНКА С ВИДЕОСЕТКОЙ И КНОПКАМИ ---
+        // --- ДИНАМИЧЕСКИЕ ПЕРСОНАЛЬНЫЕ КОМНАТЫ И КНОПКА СМЕНЫ КАМЕРЫ ---
 
         async function startGroupCall() {
+            // Определяем уникальную комнату для открытого чата
+            if (currentTarget.startsWith('#')) {
+                activeCallRoomId = "channel_call_" + currentTarget.replace('#', '');
+            } else {
+                const sortedPair = [currentUser, currentTarget].sort();
+                activeCallRoomId = "private_call_" + sortedPair[0] + "_" + sortedPair[1];
+            }
+
             document.getElementById('group-call-screen').classList.remove('hidden');
             try {
-                groupLocalStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+                groupLocalStream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: currentFacingMode },
+                    audio: true
+                });
                 document.getElementById('local-video').srcObject = groupLocalStream;
-                socket.emit('join_call', { roomId: callRoomId });
+                socket.emit('join_call', { roomId: activeCallRoomId });
             } catch (err) {
                 alert("Разрешите доступ к камере и микрофону в браузере!");
                 leaveGroupCall();
+            }
+        }
+
+        async function toggleFlipCam() {
+            if (!groupLocalStream) return;
+            currentFacingMode = (currentFacingMode === 'user') ? 'environment' : 'user';
+            
+            // Останавливаем старый видео-трек
+            const videoTrack = groupLocalStream.getVideoTracks()[0];
+            if (videoTrack) videoTrack.stop();
+
+            try {
+                const newStream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: currentFacingMode },
+                    audio: false
+                });
+                const newVideoTrack = newStream.getVideoTracks()[0];
+                groupLocalStream.removeTrack(videoTrack);
+                groupLocalStream.addTrack(newVideoTrack);
+                document.getElementById('local-video').srcObject = groupLocalStream;
+
+                // Обновляем трек у всех активных пиров
+                Object.values(groupPeerConnections).forEach(pc => {
+                    const sender = pc.getSenders().find(s => s.track && s.track.kind === 'video');
+                    if (sender) sender.replaceTrack(newVideoTrack);
+                });
+            } catch(e) {
+                alert("Ошибка смены камеры: " + e);
             }
         }
 
@@ -1334,7 +1375,7 @@
         }
 
         function leaveGroupCall() {
-            socket.emit('leave_call', { roomId: callRoomId });
+            socket.emit('leave_call', { roomId: activeCallRoomId });
 
             Object.keys(groupPeerConnections).forEach(sid => {
                 groupPeerConnections[sid].close();
@@ -1433,6 +1474,9 @@
 
         async function startDirectCall() {
             if (currentTarget.startsWith('#')) return;
+            const sortedPair = [currentUser, currentTarget].sort();
+            activeCallRoomId = "private_call_" + sortedPair[0] + "_" + sortedPair[1];
+
             document.getElementById('call-modal').style.display = 'flex';
             document.getElementById('call-user-name').innerText = '@' + currentTarget;
             document.getElementById('call-status-text').innerText = 'Вызов собеседника...';
@@ -1454,7 +1498,7 @@
 
                 const offer = await activeCallPeer.createOffer();
                 await activeCallPeer.setLocalDescription(offer);
-                socket.emit('call_start', { caller: currentUser, target: currentTarget, offer: offer });
+                socket.emit('call_start', { caller: currentUser, target: currentTarget, roomId: activeCallRoomId, offer: offer });
 
             } catch(e) { alert('Ошибка доступа к микрофону!'); endCall(); }
         }
@@ -1468,7 +1512,8 @@
             setAvatarElement(document.getElementById('call-user-avatar'), data.caller);
         });
 
-        function acceptCallFromCard(callerName) {
+        function acceptCallFromCard(callerName, roomId) {
+            if (roomId) activeCallRoomId = roomId;
             if (incomingCallData) acceptCall();
             else switchChat(callerName);
         }
