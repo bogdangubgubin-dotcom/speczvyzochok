@@ -156,7 +156,7 @@
 
         .admin-user-row { display: flex; justify-content: space-between; align-items: center; background: var(--item-hover); padding: 8px 12px; border-radius: 8px; border: 1px solid var(--panel-border); font-size: 13px; }
 
-        /* ЭКРАН ГРУППОВОГО WEBRTC ЗВОНКА */
+        /* ЭКРАН WEBRTC ВИДЕОЗВОНКА */
         #group-call-screen { position: fixed; top: 0; left: 0; width: 100vw; height: 100dvh; background: rgba(0,0,0,0.95); z-index: 3500; display: flex; flex-direction: column; }
         #group-call-screen.hidden { display: none; }
         .video-grid { flex: 1; display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; padding: 15px; overflow-y: auto; }
@@ -225,8 +225,8 @@
                     </div>
                 </div>
                 <div style="display:flex; align-items:center; gap:6px;">
-                    <button id="group-call-btn" class="icon-btn" style="height:32px; width:auto; padding:0 8px; font-size:12px; background:#2e7d32;" onclick="startGroupCall()" title="Комната видеозвонка">📞 Звонок</button>
-                    <button id="call-btn" class="icon-btn" style="height:32px; width:36px; display:none;" onclick="startDirectCall()" title="Личный звонок">📞</button>
+                    <button id="group-call-btn" class="icon-btn" style="height:32px; width:auto; padding:0 8px; font-size:12px; background:#2e7d32;" onclick="startGroupCall()" title="Видеозвонок">📹 Видео</button>
+                    <button id="call-btn" class="icon-btn" style="height:32px; width:36px; display:none;" onclick="startDirectCall('audio')" title="Аудиозвонок">📞</button>
                     <button class="icon-btn" style="height:32px; width:auto; padding:0 8px; font-size:12px;" onclick="openGalleryModal()">🖼️ Медиа</button>
                     <button id="admin-btn" class="admin-nav-btn" onclick="openAdminModal()">⚙️ Админка</button>
                 </div>
@@ -307,7 +307,7 @@
         </div>
     </div>
 
-    <!-- ОКНО ГОЛОСОВОГО ВХОДЯЩЕГО ЗВОНКА 1-НА-1 -->
+    <!-- ОКНО ВХОДЯЩЕГО ВЫЗОВА 1-НА-1 -->
     <div id="call-modal">
         <div id="call-user-avatar" class="call-avatar">?</div>
         <h3 id="call-user-name">Звонок...</h3>
@@ -464,13 +464,14 @@
         let micAnimFrame = null;
         let peerConnections = {};
 
-        // ЗВОНКИ: ПЕРСОНАЛЬНЫЕ И ГРУППОВЫЕ КОМНАТЫ И ПЕРЕКЛЮЧЕНИЕ КАМЕР
+        // WEBRTC ЗВОНКИ И НАСТРОЙКИ КАМЕРЫ
         let groupLocalStream = null;
         let isGroupMicOn = true;
         let isGroupCamOn = true;
-        let currentFacingMode = 'user'; // 'user' (фронтальная) или 'environment' (задняя)
+        let currentFacingMode = 'user'; 
         const groupPeerConnections = {};
         let activeCallRoomId = "general-room";
+        let callTimeoutTimer = null;
 
         let mediaRecorder = null;
         let videoRecorder = null;
@@ -1169,7 +1170,7 @@
                 }
                 const isIncoming = msg.target === currentUser;
                 div.innerHTML = `
-                    <div style="font-size: 24px; margin-bottom: 5px;">📞</div>
+                    <div style="font-size: 24px; margin-bottom: 5px;">${msg.call_type === 'video' ? '📹' : '📞'}</div>
                     <div style="font-weight: bold; font-size: 14px; margin-bottom: 4px;">
                         ${isIncoming ? 'Входящий звонок от @' + msg.sender : 'Исходящий звонок для @' + msg.target}
                     </div>
@@ -1297,17 +1298,18 @@
             });
         }
 
-        // --- ДИНАМИЧЕСКИЕ ПЕРСОНАЛЬНЫЕ КОМНАТЫ И КНОПКА СМЕНЫ КАМЕРЫ ---
+        // --- ДИНАМИЧЕСКИЕ КОМНАТЫ ЗВОНКОВ И СМЕНА КАМЕРЫ ---
 
         async function startGroupCall() {
-            // Определяем уникальную комнату для открытого чата
             if (currentTarget.startsWith('#')) {
                 activeCallRoomId = "channel_call_" + currentTarget.replace('#', '');
+                openGroupVideoScreen();
             } else {
-                const sortedPair = [currentUser, currentTarget].sort();
-                activeCallRoomId = "private_call_" + sortedPair[0] + "_" + sortedPair[1];
+                startDirectCall('video');
             }
+        }
 
+        async function openGroupVideoScreen() {
             document.getElementById('group-call-screen').classList.remove('hidden');
             try {
                 groupLocalStream = await navigator.mediaDevices.getUserMedia({
@@ -1326,7 +1328,6 @@
             if (!groupLocalStream) return;
             currentFacingMode = (currentFacingMode === 'user') ? 'environment' : 'user';
             
-            // Останавливаем старый видео-трек
             const videoTrack = groupLocalStream.getVideoTracks()[0];
             if (videoTrack) videoTrack.stop();
 
@@ -1340,7 +1341,6 @@
                 groupLocalStream.addTrack(newVideoTrack);
                 document.getElementById('local-video').srcObject = groupLocalStream;
 
-                // Обновляем трек у всех активных пиров
                 Object.values(groupPeerConnections).forEach(pc => {
                     const sender = pc.getSenders().find(s => s.track && s.track.kind === 'video');
                     if (sender) sender.replaceTrack(newVideoTrack);
@@ -1470,21 +1470,23 @@
             if (card) card.remove();
         });
 
-        // --- ЛОГИКА 1-НА-1 ЗВОНКОВ ---
+        // --- ЛОГИКА ИНДИВИДУАЛЬНЫХ ЗВОНКОВ С ТАЙМЕРОМ ОЖИДАНИЯ ---
 
-        async function startDirectCall() {
+        async function startDirectCall(callType = 'audio') {
             if (currentTarget.startsWith('#')) return;
             const sortedPair = [currentUser, currentTarget].sort();
             activeCallRoomId = "private_call_" + sortedPair[0] + "_" + sortedPair[1];
 
             document.getElementById('call-modal').style.display = 'flex';
             document.getElementById('call-user-name').innerText = '@' + currentTarget;
-            document.getElementById('call-status-text').innerText = 'Вызов собеседника...';
+            document.getElementById('call-status-text').innerText = callType === 'video' ? 'Видеовызов собеседника...' : 'Голосовой вызов...';
             document.getElementById('accept-call-btn').style.display = 'none';
             setAvatarElement(document.getElementById('call-user-avatar'), currentTarget);
 
             try {
-                directCallStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                const constraints = callType === 'video' ? { video: { facingMode: currentFacingMode }, audio: true } : { audio: true };
+                directCallStream = await navigator.mediaDevices.getUserMedia(constraints);
+
                 activeCallPeer = new RTCPeerConnection(iceServers);
                 directCallStream.getTracks().forEach(t => activeCallPeer.addTrack(t, directCallStream));
 
@@ -1493,21 +1495,36 @@
                 };
 
                 activeCallPeer.ontrack = e => {
-                    document.getElementById('direct-call-audio').srcObject = e.streams[0];
+                    if (callType === 'video') openGroupVideoScreen();
+                    else document.getElementById('direct-call-audio').srcObject = e.streams[0];
                 };
 
                 const offer = await activeCallPeer.createOffer();
                 await activeCallPeer.setLocalDescription(offer);
-                socket.emit('call_start', { caller: currentUser, target: currentTarget, roomId: activeCallRoomId, offer: offer });
+                
+                socket.emit('call_start', { 
+                    caller: currentUser, 
+                    target: currentTarget, 
+                    roomId: activeCallRoomId, 
+                    call_type: callType,
+                    offer: offer 
+                });
 
-            } catch(e) { alert('Ошибка доступа к микрофону!'); endCall(); }
+                // Таймер вызова на 30 секунд
+                clearTimeout(callTimeoutTimer);
+                callTimeoutTimer = setTimeout(() => {
+                    document.getElementById('call-status-text').innerText = 'Пользователь не отвечает';
+                    setTimeout(() => { endCall(); }, 2000);
+                }, 30000);
+
+            } catch(e) { alert('Ошибка доступа к камере/микрофону!'); endCallLocal(); }
         }
 
         socket.on('incoming_call', (data) => {
             incomingCallData = data;
             document.getElementById('call-modal').style.display = 'flex';
             document.getElementById('call-user-name').innerText = '@' + data.caller;
-            document.getElementById('call-status-text').innerText = 'Входящий звонок...';
+            document.getElementById('call-status-text').innerText = (data.call_type === 'video' ? 'Входящий видеозвонок...' : 'Входящий звонок...');
             document.getElementById('accept-call-btn').style.display = 'inline-block';
             setAvatarElement(document.getElementById('call-user-avatar'), data.caller);
         });
@@ -1518,20 +1535,16 @@
             else switchChat(callerName);
         }
 
-        socket.on('call_failed', (data) => {
-            if (data.reason === 'offline') {
-                document.getElementById('call-status-text').innerText = 'Пользователь не в сети. Оставлен пропущенный звонок.';
-                setTimeout(() => {
-                    endCallLocal();
-                }, 2000);
-            }
-        });
-
         async function acceptCall() {
+            clearTimeout(callTimeoutTimer);
             document.getElementById('accept-call-btn').style.display = 'none';
             document.getElementById('call-status-text').innerText = 'Разговор...';
+            const isVideo = incomingCallData && incomingCallData.call_type === 'video';
+
             try {
-                directCallStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                const constraints = isVideo ? { video: { facingMode: currentFacingMode }, audio: true } : { audio: true };
+                directCallStream = await navigator.mediaDevices.getUserMedia(constraints);
+
                 activeCallPeer = new RTCPeerConnection(iceServers);
                 directCallStream.getTracks().forEach(t => activeCallPeer.addTrack(t, directCallStream));
 
@@ -1540,18 +1553,21 @@
                 };
 
                 activeCallPeer.ontrack = e => {
-                    document.getElementById('direct-call-audio').srcObject = e.streams[0];
+                    if (isVideo) openGroupVideoScreen();
+                    else document.getElementById('direct-call-audio').srcObject = e.streams[0];
                 };
 
                 await activeCallPeer.setRemoteDescription(new RTCSessionDescription(incomingCallData.offer));
                 const answer = await activeCallPeer.createAnswer();
                 await activeCallPeer.setLocalDescription(answer);
+                
                 socket.emit('call_accept', { target: incomingCallData.caller, answer: answer });
 
             } catch(e) { alert('Ошибка соединения!'); endCall(); }
         }
 
         socket.on('call_accepted', async (data) => {
+            clearTimeout(callTimeoutTimer);
             document.getElementById('call-status-text').innerText = 'Разговор...';
             if (activeCallPeer) await activeCallPeer.setRemoteDescription(new RTCSessionDescription(data.answer));
         });
@@ -1569,10 +1585,12 @@
         }
 
         function endCallLocal() {
+            clearTimeout(callTimeoutTimer);
             if (directCallStream) directCallStream.getTracks().forEach(t => t.stop());
             if (activeCallPeer) activeCallPeer.close();
             activeCallPeer = null; directCallStream = null; incomingCallData = null;
             document.getElementById('call-modal').style.display = 'none';
+            document.getElementById('group-call-screen').classList.add('hidden');
             document.querySelectorAll('.call-card').forEach(c => c.remove());
         }
 
