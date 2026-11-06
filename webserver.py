@@ -35,7 +35,6 @@ def init_db():
     conn, db_type = get_db()
     cur = conn.cursor()
     
-    # Создаем базовые таблицы
     if db_type == 'postgres':
         cur.execute('''CREATE TABLE IF NOT EXISTS users (
             id SERIAL PRIMARY KEY,
@@ -58,7 +57,6 @@ def init_db():
             is_edited INTEGER DEFAULT 0,
             reactions TEXT DEFAULT '{}'
         )''')
-        # Автоматическая миграция полей для устранения ошибки UndefinedColumn
         try:
             cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS password TEXT;")
             cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'user';")
@@ -108,24 +106,29 @@ def send_web_push(target_user, title, body, room_id=""):
     except WebPushException as ex:
         print(f"Push error for {target_user}:", ex)
 
-# --- АВТОРИЗАЦИЯ С ЗАЩИТОЙ И ПОЛЬЗОВАТЕЛИ ---
+# --- АВТОРИЗАЦИЯ И РЕГИСТРАЦИЯ С ОЧИСТКОЙ СТРОК ---
 
 @socketio.on('login')
 def on_login(data):
-    u = data.get('username')
-    p = data.get('password')
+    u = str(data.get('username', '')).strip()
+    p = str(data.get('password', '')).strip()
+    
+    if not u or not p:
+        emit('auth_response', {'status': 'error', 'message': 'Заполните логин и пароль'})
+        return
+
     conn, db_type = get_db()
     cur = conn.cursor()
     
     try:
         if db_type == 'postgres':
-            cur.execute("SELECT password, role, avatar FROM users WHERE username=%s", (u,))
+            cur.execute("SELECT password, role, avatar FROM users WHERE LOWER(username)=LOWER(%s)", (u,))
         else:
-            cur.execute("SELECT password, role, avatar FROM users WHERE username=?", (u,))
+            cur.execute("SELECT password, role, avatar FROM users WHERE LOWER(username)=LOWER(?)", (u,))
         user = cur.fetchone()
         conn.close()
 
-        if user and user[0] == p:
+        if user and str(user[0]).strip() == p:
             online_users[u] = request.sid
             user_sockets[request.sid] = u
             join_room(u)
@@ -141,22 +144,36 @@ def on_login(data):
     except Exception as e:
         if conn: conn.close()
         print("Login Error:", e)
-        emit('auth_response', {'status': 'error', 'message': 'Ошибка авторизации на сервере БД'})
+        emit('auth_response', {'status': 'error', 'message': 'Ошибка авторизации на сервере'})
 
 @socketio.on('register')
 def on_register(data):
-    u = data.get('username')
-    p = data.get('password')
-    role = 'admin' if u == 'totr' else 'user'
+    u = str(data.get('username', '')).strip()
+    p = str(data.get('password', '')).strip()
+    
+    if not u or not p:
+        emit('auth_response', {'status': 'error', 'message': 'Введите логин и пароль'})
+        return
+
+    role = 'admin' if u.lower() == 'totr' else 'user'
     conn, db_type = get_db()
     cur = conn.cursor()
+    
     try:
+        # Если старый аккаунт существовал со сломанным паролем — перезаписываем его новым паролем
         if db_type == 'postgres':
-            cur.execute("INSERT INTO users (username, password, role) VALUES (%s, %s, %s)", (u, p, role))
+            cur.execute("""
+                INSERT INTO users (username, password, role) 
+                VALUES (%s, %s, %s)
+                ON CONFLICT (username) 
+                DO UPDATE SET password = EXCLUDED.password, role = EXCLUDED.role
+            """, (u, p, role))
         else:
-            cur.execute("INSERT INTO users (username, password, role) VALUES (?, ?, ?)", (u, p, role))
+            cur.execute("INSERT OR REPLACE INTO users (username, password, role) VALUES (?, ?, ?)", (u, p, role))
+            
         conn.commit()
         conn.close()
+        
         online_users[u] = request.sid
         user_sockets[request.sid] = u
         join_room(u)
@@ -164,7 +181,8 @@ def on_register(data):
         broadcast_users()
     except Exception as e:
         if conn: conn.close()
-        emit('auth_response', {'status': 'error', 'message': 'Пользователь уже существует'})
+        print("Register Error:", e)
+        emit('auth_response', {'status': 'error', 'message': 'Ошибка регистрации'})
 
 @socketio.on('disconnect')
 def on_disconnect():
