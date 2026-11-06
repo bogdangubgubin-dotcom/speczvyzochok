@@ -279,7 +279,7 @@ def on_send_msg(data):
     else:
         emit('new_msg', msg_data, room=t)
         emit('new_msg', msg_data, room=s)
-        send_web_push(t, f"Новое сообщение от {s}", m)
+        send_web_push(t, f"Новое сообщение от @{s}", m if mt == 'text' else 'Вложение')
 
 @socketio.on('mark_read')
 def on_mark_read(data):
@@ -294,6 +294,51 @@ def on_mark_read(data):
     conn.commit()
     conn.close()
     emit('messages_read', {'user': u, 'target': t}, room=t)
+
+@socketio.on('delete_msg')
+def on_delete_msg(data):
+    mid = data.get('msg_id')
+    conn, db_type = get_db()
+    cur = conn.cursor()
+    if db_type == 'postgres':
+        cur.execute("DELETE FROM messages WHERE id=%s", (mid,))
+    else:
+        cur.execute("DELETE FROM messages WHERE id=?", (mid,))
+    conn.commit()
+    conn.close()
+    emit('msg_deleted', {'msg_id': mid}, broadcast=True)
+
+@socketio.on('edit_msg')
+def on_edit_msg(data):
+    mid = data.get('msg_id')
+    txt = data.get('new_text')
+    conn, db_type = get_db()
+    cur = conn.cursor()
+    if db_type == 'postgres':
+        cur.execute("UPDATE messages SET message=%s, is_edited=1 WHERE id=%s", (txt, mid))
+    else:
+        cur.execute("UPDATE messages SET message=?, is_edited=1 WHERE id=?", (txt, mid))
+    conn.commit()
+    conn.close()
+    emit('msg_edited', {'msg_id': mid, 'new_text': txt}, broadcast=True)
+
+@socketio.on('update_avatar')
+def on_update_avatar(data):
+    u = data.get('user')
+    av = data.get('avatar')
+    conn, db_type = get_db()
+    cur = conn.cursor()
+    if db_type == 'postgres':
+        cur.execute("UPDATE users SET avatar=%s WHERE username=%s", (av, u))
+    else:
+        cur.execute("UPDATE users SET avatar=? WHERE username=?", (av, u))
+    conn.commit()
+    conn.close()
+    emit('avatar_updated', {'user': u, 'avatar': av}, broadcast=True)
+
+@socketio.on('user_typing')
+def on_user_typing(data):
+    emit('display_typing', data, room=data.get('target'))
 
 # --- ЛОГИКА ИГРЫ МАФИЯ ---
 
@@ -311,8 +356,7 @@ def on_mafia_create_room(data):
             'creator': user,
             'players': [user],
             'roles': {},
-            'started': False,
-            'phase': 'lobby'
+            'started': False
         }
         join_room('mafia_' + rname)
         emit('mafia_room_joined', {'room_name': rname, 'players': [user], 'is_creator': True})
