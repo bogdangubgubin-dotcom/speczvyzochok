@@ -125,16 +125,6 @@
         .room-item { background: var(--item-hover); border: 1px solid var(--panel-border); border-radius: 10px; padding: 12px; display: flex; justify-content: space-between; align-items: center; }
         .room-title { font-weight: bold; font-size: 15px; }
         .room-info { font-size: 12px; color: #aaa; }
-        
-        .poker-table { background: #1b4332; border: 6px solid #2d6a4f; border-radius: 120px; padding: 15px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; justify-items: center; align-items: center; margin: 10px 0; }
-        .table-slot { width: 90px; height: 110px; background: rgba(0,0,0,0.4); border: 2px dashed #40916c; border-radius: 12px; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 6px; text-align: center; position: relative; }
-        .table-slot.occupied { border-style: solid; border-color: #52b788; background: rgba(0,0,0,0.7); }
-        .slot-avatar { width: 42px; height: 42px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 16px; margin-bottom: 2px; background-size: cover; background-position: center; }
-        .slot-name { font-size: 11px; font-weight: bold; color: #fff; width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .slot-status { font-size: 10px; color: #aaa; }
-
-        .audio-meter-box { width: 48px; height: 3px; background: #333; border-radius: 2px; overflow: hidden; margin: 2px 0; display: none; }
-        .audio-meter-bar { height: 100%; width: 0%; background: #4caf50; transition: width 0.04s ease; }
 
         .logout-btn { background: transparent; border: 1px solid #555; color: #aaa; padding: 4px 8px; font-size: 12px; border-radius: 6px; cursor: pointer; width: auto; flex-shrink: 0; margin: 0; }
         .admin-nav-btn { background: #d32f2f; color: #fff; padding: 5px 8px; font-size: 11px; border-radius: 6px; border: none; font-weight: bold; cursor: pointer; display: none; }
@@ -174,7 +164,6 @@
         @media (max-width: 600px) {
             #sidebar { position: fixed; left: 0; top: 0; bottom: 0; width: 80%; max-width: 280px; transform: translateX(-100%); }
             #sidebar.open { transform: translateX(0); }
-            .poker-table { grid-template-columns: repeat(2, 1fr); border-radius: 30px; }
             .video-note { width: 130px; height: 130px; }
         }
     </style>
@@ -291,7 +280,7 @@
         </div>
     </div>
 
-    <!-- ЭКРАН ГРУППОВОГО/ИНДИВИДУАЛЬНОГО WEBRTC ЗВОНКА -->
+    <!-- ЭКРАН WEBRTC ВИДЕОЗВОНКА -->
     <div id="group-call-screen" class="hidden">
         <div id="video-grid" class="video-grid">
             <div class="video-card" id="local-user-card">
@@ -365,7 +354,6 @@
 
                 <button onclick="requestPushPermission()" style="background:#1F6AA5; margin-bottom:5px; padding:12px;">🔔 Разрешить Push-уведомления (Фон)</button>
                 <button onclick="toggleTheme()" style="background:#444; margin-bottom:5px;">🌗 Сменить тему оформления</button>
-                <button onclick="openMafiaModal()" style="background:#8e24aa; margin-bottom:10px; padding:12px;">🕵️ Игра «Мафия»</button>
 
                 <hr style="border:0; border-top:1px solid var(--panel-border); margin:10px 0;">
                 <h4 style="font-size:14px; color:#aaa;">Смена пароля</h4>
@@ -391,46 +379,6 @@
         </div>
     </div>
 
-    <!-- ОКНО ИГРЫ МАФИЯ -->
-    <div id="mafia-modal" class="modal-overlay">
-        <div class="modal-box">
-            <div class="modal-header">
-                <h3 id="mafia-modal-title">🕵️ Лобби комнат «Мафии»</h3>
-                <button onclick="closeMafiaModal()" style="width:auto; padding:4px 10px; background:#444;">✕</button>
-            </div>
-            <div class="modal-body">
-                <div id="mafia-rooms-screen">
-                    <p style="font-size:13px; color:#aaa; margin-bottom:10px;">Выберите свободную комнату для игры:</p>
-                    <div id="mafia-rooms-container" style="display:flex; flex-direction:column; gap:8px;"></div>
-                </div>
-
-                <div id="mafia-gameplay-screen" style="display:none;">
-                    <div style="display:flex; justify-content:space-between; align-items:center;">
-                        <button onclick="backToMafiaRooms()" style="width:auto; padding:6px 12px; background:#444; font-size:12px;">← Назад</button>
-                        <span id="room-phase-badge" style="background:#3B8ED0; padding:4px 8px; border-radius:6px; font-size:12px; font-weight:bold;">Лобби</span>
-                        <span id="mafia-timer-badge" style="background:#d32f2f; padding:4px 8px; border-radius:6px; font-size:12px; font-weight:bold; display:none;">⏱ 60s</span>
-                    </div>
-
-                    <div class="poker-table" id="poker-table-slots"></div>
-
-                    <div style="display:flex; justify-content:space-between; align-items:center; font-size:13px;">
-                        <div>Моя роль: <b id="my-role-text">Скрыта</b> <button onclick="toggleRoleShow()" style="width:auto; padding:2px 6px; font-size:10px;">👁</button></div>
-                        <button id="mic-toggle-btn" onclick="toggleMic()" style="width:auto; padding:4px 10px; font-size:11px; background:#c62828;">🔇 Микрофон ВЫКЛ</button>
-                    </div>
-
-                    <div style="display:flex; gap:8px; margin-top:5px;">
-                        <button id="join-room-btn" onclick="joinActiveRoom()" style="background:#1F6AA5;">Занять место</button>
-                        <button id="leave-room-btn" onclick="leaveActiveRoom()" style="background:#c62828; display:none;">Встать из-за стола</button>
-                        <button onclick="startActiveRoomGame()" style="background:#2e7d32;">Старт игры</button>
-                    </div>
-
-                    <h4 style="font-size:13px; margin-top:5px;">События игры:</h4>
-                    <div id="room-logs-box" style="background:#151515; border:1px solid #333; padding:8px; border-radius:8px; font-size:12px; height:90px; overflow-y:auto; color:#aaa;"></div>
-                </div>
-            </div>
-        </div>
-    </div>
-
     <!-- ЛАЙТБОКС С ПОДДЕРЖКОЙ ВИДЕО И КАРТИНОК -->
     <div id="lightbox" onclick="closeLightbox()">
         <img id="lightbox-img" src="" style="display:none;">
@@ -452,17 +400,7 @@
         let currentUser = "";
         let currentTarget = "#general";
         let userRole = "user";
-        let activeRoomId = null;
-        let showRoleFlag = false;
-        let mySecretRole = null;
         let editingMsgId = null;
-        
-        let isMicOn = false;
-        let mediaStream = null;
-        let audioContext = null;
-        let analyser = null;
-        let micAnimFrame = null;
-        let peerConnections = {};
 
         // WEBRTC ЗВОНКИ И НАСТРОЙКИ КАМЕРЫ
         let groupLocalStream = null;
@@ -730,6 +668,8 @@
                 socket.emit('get_channels');
                 socket.emit('get_users');
                 switchChat('#general');
+
+                socket.emit('check_active_call', { user: currentUser });
             } else {
                 document.getElementById('status').innerText = data.message;
             }
@@ -1510,7 +1450,6 @@
                     offer: offer 
                 });
 
-                // Таймер вызова на 30 секунд
                 clearTimeout(callTimeoutTimer);
                 callTimeoutTimer = setTimeout(() => {
                     document.getElementById('call-status-text').innerText = 'Пользователь не отвечает';
@@ -1522,6 +1461,7 @@
 
         socket.on('incoming_call', (data) => {
             incomingCallData = data;
+            activeCallRoomId = data.roomId;
             document.getElementById('call-modal').style.display = 'flex';
             document.getElementById('call-user-name').innerText = '@' + data.caller;
             document.getElementById('call-status-text').innerText = (data.call_type === 'video' ? 'Входящий видеозвонок...' : 'Входящий звонок...');
@@ -1561,7 +1501,7 @@
                 const answer = await activeCallPeer.createAnswer();
                 await activeCallPeer.setLocalDescription(answer);
                 
-                socket.emit('call_accept', { target: incomingCallData.caller, answer: answer });
+                socket.emit('call_accept', { target: incomingCallData.caller, roomId: activeCallRoomId, answer: answer });
 
             } catch(e) { alert('Ошибка соединения!'); endCall(); }
         }
@@ -1580,7 +1520,7 @@
 
         function endCall() {
             const target = incomingCallData ? incomingCallData.caller : currentTarget;
-            socket.emit('call_end', { target: target, caller: currentUser });
+            socket.emit('call_end', { target: target, caller: currentUser, roomId: activeCallRoomId });
             endCallLocal();
         }
 
@@ -1593,206 +1533,6 @@
             document.getElementById('group-call-screen').classList.add('hidden');
             document.querySelectorAll('.call-card').forEach(c => c.remove());
         }
-
-        function openMafiaModal() {
-            closeProfileModal();
-            document.getElementById('mafia-modal').style.display = 'flex';
-            backToMafiaRooms();
-        }
-        function closeMafiaModal() { document.getElementById('mafia-modal').style.display = 'none'; }
-
-        function backToMafiaRooms() {
-            if (activeRoomId) leaveActiveRoom();
-            activeRoomId = null;
-            document.getElementById('mafia-modal-title').innerText = '🕵️ Лобби комнат «Мафии»';
-            document.getElementById('mafia-rooms-screen').style.display = 'block';
-            document.getElementById('mafia-gameplay-screen').style.display = 'none';
-            socket.emit('mafia_get_rooms');
-        }
-
-        function enterMafiaRoom(roomId) {
-            activeRoomId = roomId;
-            document.getElementById('mafia-rooms-screen').style.display = 'none';
-            document.getElementById('mafia-gameplay-screen').style.display = 'block';
-            socket.emit('mafia_get_room_state', { room_id: activeRoomId });
-        }
-
-        function joinActiveRoom() { socket.emit('mafia_join', { room_id: activeRoomId, user: currentUser }); }
-        function leaveActiveRoom() { stopMicMeter(); socket.emit('mafia_leave', { room_id: activeRoomId, user: currentUser }); }
-        function startActiveRoomGame() { socket.emit('mafia_start', { room_id: activeRoomId }); }
-
-        function toggleRoleShow() {
-            showRoleFlag = !showRoleFlag;
-            document.getElementById('my-role-text').innerText = showRoleFlag ? (mySecretRole || 'Нет роли') : 'Скрыта';
-        }
-
-        async function toggleMic() {
-            isMicOn = !isMicOn;
-            const btn = document.getElementById('mic-toggle-btn');
-            if (isMicOn) {
-                try {
-                    mediaStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
-                    btn.innerText = '🎙️ Микрофон ВКЛ'; btn.style.background = '#388e3c';
-                    startMicMeter(mediaStream);
-                    socket.emit('webrtc_join', { room_id: activeRoomId, user: currentUser });
-                } catch(err) { alert('Микрофон недоступен: ' + err); isMicOn = false; }
-            } else { stopMicMeter(); btn.innerText = '🔇 Микрофон ВЫКЛ'; btn.style.background = '#c62828'; }
-        }
-
-        function startMicMeter(stream) {
-            audioContext = new (window.AudioContext || window.webkitAudioContext)();
-            if (audioContext.state === 'suspended') audioContext.resume();
-            analyser = audioContext.createAnalyser();
-            const source = audioContext.createMediaStreamSource(stream);
-            source.connect(analyser);
-            analyser.fftSize = 64;
-            const dataArray = new Uint8Array(analyser.frequencyBinCount);
-            const myMeterBox = document.getElementById('meter-box-' + currentUser);
-            const myMeterBar = document.getElementById('meter-bar-' + currentUser);
-            if (myMeterBox) myMeterBox.style.display = 'block';
-
-            function updateLevel() {
-                analyser.getByteFrequencyData(dataArray);
-                let sum = 0;
-                for (let i = 0; i < dataArray.length; i++) sum += dataArray[i];
-                let average = sum / dataArray.length;
-                let pct = Math.min(100, Math.round((average / 128) * 100));
-                if (myMeterBar) myMeterBar.style.width = pct + '%';
-                micAnimFrame = requestAnimationFrame(updateLevel);
-            }
-            updateLevel();
-        }
-
-        function createPeer(targetSid) {
-            if (peerConnections[targetSid]) return peerConnections[targetSid];
-            const pc = new RTCPeerConnection(iceServers);
-            peerConnections[targetSid] = pc;
-            if (mediaStream) mediaStream.getTracks().forEach(track => pc.addTrack(track, mediaStream));
-
-            pc.onicecandidate = e => {
-                if (e.candidate) socket.emit('webrtc_signal', { target_sid: targetSid, candidate: e.candidate });
-            };
-
-            pc.ontrack = e => {
-                let audioElem = document.getElementById('audio-' + targetSid);
-                if (!audioElem) {
-                    audioElem = document.createElement('audio');
-                    audioElem.id = 'audio-' + targetSid; audioElem.autoplay = true; audioElem.playsInline = true;
-                    document.getElementById('audio-peers-container').appendChild(audioElem);
-                }
-                audioElem.srcObject = e.streams[0];
-                audioElem.play().catch(err => {});
-            };
-            return pc;
-        }
-
-        socket.on('webrtc_user_joined', async (data) => {
-            if (data.sid === socket.id) return;
-            const pc = createPeer(data.sid);
-            const offer = await pc.createOffer();
-            await pc.setLocalDescription(offer);
-            socket.emit('webrtc_signal', { target_sid: data.sid, offer: offer });
-        });
-
-        socket.on('webrtc_signal', async (data) => {
-            const senderSid = data.sender_sid;
-            if (senderSid === socket.id) return;
-            const pc = createPeer(senderSid);
-            if (data.offer) {
-                await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
-                const answer = await pc.createAnswer();
-                await pc.setLocalDescription(answer);
-                socket.emit('webrtc_signal', { target_sid: senderSid, answer: answer });
-            } else if (data.answer) await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
-            else if (data.candidate) await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
-        });
-
-        function stopMicMeter() {
-            if (micAnimFrame) cancelAnimationFrame(micAnimFrame);
-            if (mediaStream) mediaStream.getTracks().forEach(t => t.stop());
-            if (audioContext) audioContext.close();
-            for (let sid in peerConnections) peerConnections[sid].close();
-            peerConnections = {};
-            document.getElementById('audio-peers-container').innerHTML = '';
-            isMicOn = false;
-            const myMeterBox = document.getElementById('meter-box-' + currentUser);
-            if (myMeterBox) myMeterBox.style.display = 'none';
-        }
-
-        socket.on('mafia_rooms_list', (data) => {
-            const container = document.getElementById('mafia-rooms-container');
-            container.innerHTML = '';
-            for (const [rid, rdata] of Object.entries(data.rooms)) {
-                const item = document.createElement('div');
-                item.className = 'room-item';
-                item.innerHTML = `
-                    <div>
-                        <div class="room-title">${rdata.name}</div>
-                        <div class="room-info">Игроков: ${rdata.count}/6 | Статус: ${rdata.state.toUpperCase()}</div>
-                    </div>
-                    <button style="width:auto; padding:6px 14px;" onclick="enterMafiaRoom('${rid}')">Войти</button>
-                `;
-                container.appendChild(item);
-            }
-        });
-
-        socket.on('mafia_room_update', (data) => {
-            if (data.room_id !== activeRoomId) return;
-            document.getElementById('mafia-modal-title').innerText = '🕵️ ' + data.name;
-            document.getElementById('room-phase-badge').innerText = data.state.toUpperCase();
-
-            const timerBadge = document.getElementById('mafia-timer-badge');
-            if (data.timer_end > 0) {
-                const left = Math.max(0, data.timer_end - Math.floor(Date.now() / 1000));
-                timerBadge.innerText = `⏱ ${left}s`;
-                timerBadge.style.display = 'inline-block';
-            } else timerBadge.style.display = 'none';
-
-            if (data.players[currentUser]) {
-                mySecretRole = data.players[currentUser].role;
-                document.getElementById('join-room-btn').style.display = 'none';
-                document.getElementById('leave-room-btn').style.display = 'inline-block';
-            } else {
-                document.getElementById('join-room-btn').style.display = 'inline-block';
-                document.getElementById('leave-room-btn').style.display = 'none';
-            }
-
-            const table = document.getElementById('poker-table-slots');
-            table.innerHTML = '';
-            const playerBySlot = {};
-            for (const [uname, pinfo] of Object.entries(data.players)) playerBySlot[pinfo.slot] = { name: uname, ...pinfo };
-
-            for (let s = 0; s < 6; s++) {
-                const slotDiv = document.createElement('div');
-                if (playerBySlot[s]) {
-                    const p = playerBySlot[s];
-                    slotDiv.className = 'table-slot occupied';
-                    let actBtn = '';
-                    if (p.alive && p.name !== currentUser) {
-                        if (data.state === 'night' && mySecretRole === 'mafia') actBtn = `<button class="act-btn" onclick="socket.emit('mafia_action', {room_id:'${activeRoomId}', user:'${currentUser}', target:'${p.name}', action:'kill'})">Убить</button>`;
-                        if (data.state === 'day') actBtn = `<button class="act-btn" style="background:#f57c00;" onclick="socket.emit('mafia_action', {room_id:'${activeRoomId}', user:'${currentUser}', target:'${p.name}', action:'vote'})">Голос</button>`;
-                    }
-                    const avElem = document.createElement('div');
-                    avElem.className = 'slot-avatar';
-                    setAvatarElement(avElem, p.name);
-                    slotDiv.appendChild(avElem);
-                    slotDiv.innerHTML += `
-                        <div class="slot-name">${p.name}</div>
-                        <div class="audio-meter-box" id="meter-box-${p.name}"><div class="audio-meter-bar" id="meter-bar-${p.name}"></div></div>
-                        <div class="slot-status">${p.alive ? '🟢 Жив' : '💀 Убит'}</div>
-                        ${actBtn}
-                    `;
-                } else {
-                    slotDiv.className = 'table-slot';
-                    slotDiv.innerHTML = `<div class="slot-avatar" style="background:#333; color:#666;">+</div><div class="slot-name" style="color:#777;">Свободно</div>`;
-                }
-                table.appendChild(slotDiv);
-            }
-
-            const lbox = document.getElementById('room-logs-box');
-            lbox.innerHTML = data.logs.join('<br>');
-            lbox.scrollTop = lbox.scrollHeight;
-        });
 
         function openProfileModal() { document.getElementById('profile-modal').style.display = 'flex'; }
         function closeProfileModal() { document.getElementById('profile-modal').style.display = 'none'; }
@@ -1809,6 +1549,7 @@
                 if (currentUser) {
                     socket.emit('get_users');
                     if (currentTarget) socket.emit('load_history', { user: currentUser, target: currentTarget });
+                    socket.emit('check_active_call', { user: currentUser });
                 }
             }
         });
