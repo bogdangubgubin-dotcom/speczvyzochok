@@ -21,7 +21,6 @@ user_sockets = {}       # sid -> username
 push_subscriptions = {} # username -> subscription_json
 active_calls = {}       # roomId -> call_data
 channels = [{'name': '#general'}]
-mafia_rooms = {}
 
 def get_db():
     database_url = os.environ.get('DATABASE_URL')
@@ -35,6 +34,8 @@ def get_db():
 def init_db():
     conn, db_type = get_db()
     cur = conn.cursor()
+    
+    # Создаем базовые таблицы
     if db_type == 'postgres':
         cur.execute('''CREATE TABLE IF NOT EXISTS users (
             id SERIAL PRIMARY KEY,
@@ -57,6 +58,14 @@ def init_db():
             is_edited INTEGER DEFAULT 0,
             reactions TEXT DEFAULT '{}'
         )''')
+        # Автоматическая миграция полей для устранения ошибки UndefinedColumn
+        try:
+            cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS password TEXT;")
+            cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'user';")
+            cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar TEXT DEFAULT '';")
+            cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS last_seen DOUBLE PRECISION DEFAULT 0;")
+        except Exception:
+            pass
     else:
         cur.execute('''CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -79,8 +88,27 @@ def init_db():
             is_edited INTEGER DEFAULT 0,
             reactions TEXT DEFAULT '{}'
         )''')
+
     conn.commit()
     conn.close()
+
+init_db()
+
+def send_web_push(target_user, title, body, room_id=""):
+    sub = push_subscriptions.get(target_user)
+    if not sub or not VAPID_PRIVATE_KEY:
+        return
+    try:
+        webpush(
+            subscription_info=sub,
+            data=f'{{"title": "{title}", "body": "{body}", "roomId": "{room_id}"}}',
+            vapid_private_key=VAPID_PRIVATE_KEY,
+            vapid_claims=VAPID_CLAIMS
+        )
+    except WebPushException as ex:
+        print(f"Push error for {target_user}:", ex)
+
+# --- АВТОРИЗАЦИЯ С ЗАЩИТОЙ И ПОЛЬЗОВАТЕЛИ ---
 
 @socketio.on('login')
 def on_login(data):
@@ -88,6 +116,7 @@ def on_login(data):
     p = data.get('password')
     conn, db_type = get_db()
     cur = conn.cursor()
+    
     try:
         if db_type == 'postgres':
             cur.execute("SELECT password, role, avatar FROM users WHERE username=%s", (u,))
@@ -100,37 +129,19 @@ def on_login(data):
             online_users[u] = request.sid
             user_sockets[request.sid] = u
             join_room(u)
-            emit('auth_response', {'status': 'ok', 'username': u, 'role': user[1], 'avatar': user[2]})
+            emit('auth_response', {
+                'status': 'ok', 
+                'username': u, 
+                'role': user[1] if user[1] else 'user', 
+                'avatar': user[2] if user[2] else ''
+            })
             broadcast_users()
         else:
             emit('auth_response', {'status': 'error', 'message': 'Неверный логин или пароль'})
     except Exception as e:
-        conn.close()
-        emit('auth_response', {'status': 'error', 'message': 'Ошибка БД при входе'})
-
-# --- АВТОРИЗАЦИЯ И ПОЛЬЗОВАТЕЛИ ---
-
-@socketio.on('login')
-def on_login(data):
-    u = data.get('username')
-    p = data.get('password')
-    conn, db_type = get_db()
-    cur = conn.cursor()
-    if db_type == 'postgres':
-        cur.execute("SELECT password, role, avatar FROM users WHERE username=%s", (u,))
-    else:
-        cur.execute("SELECT password, role, avatar FROM users WHERE username=?", (u,))
-    user = cur.fetchone()
-    conn.close()
-
-    if user and user[0] == p:
-        online_users[u] = request.sid
-        user_sockets[request.sid] = u
-        join_room(u)
-        emit('auth_response', {'status': 'ok', 'username': u, 'role': user[1], 'avatar': user[2]})
-        broadcast_users()
-    else:
-        emit('auth_response', {'status': 'error', 'message': 'Неверный логин или пароль'})
+        if conn: conn.close()
+        print("Login Error:", e)
+        emit('auth_response', {'status': 'error', 'message': 'Ошибка авторизации на сервере БД'})
 
 @socketio.on('register')
 def on_register(data):
@@ -151,8 +162,8 @@ def on_register(data):
         join_room(u)
         emit('auth_response', {'status': 'ok', 'username': u, 'role': role, 'avatar': ''})
         broadcast_users()
-    except Exception:
-        conn.close()
+    except Exception as e:
+        if conn: conn.close()
         emit('auth_response', {'status': 'error', 'message': 'Пользователь уже существует'})
 
 @socketio.on('disconnect')
@@ -164,19 +175,25 @@ def on_disconnect():
         conn, db_type = get_db()
         cur = conn.cursor()
         now = time.time()
-        if db_type == 'postgres':
-            cur.execute("UPDATE users SET last_seen=%s WHERE username=%s", (now, u))
-        else:
-            cur.execute("UPDATE users SET last_seen=? WHERE username=?", (now, u))
-        conn.commit()
+        try:
+            if db_type == 'postgres':
+                cur.execute("UPDATE users SET last_seen=%s WHERE username=%s", (now, u))
+            else:
+                cur.execute("UPDATE users SET last_seen=? WHERE username=?", (now, u))
+            conn.commit()
+        except Exception:
+            pass
         conn.close()
         broadcast_users()
 
 def broadcast_users():
     conn, db_type = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT username, avatar, last_seen FROM users")
-    users = [{'username': r[0], 'avatar': r[1], 'online': r[0] in online_users, 'last_seen': r[2]} for r in cur.fetchall()]
+    try:
+        cur.execute("SELECT username, avatar, last_seen FROM users")
+        users = [{'username': r[0], 'avatar': r[1] or '', 'online': r[0] in online_users, 'last_seen': r[2] or 0} for r in cur.fetchall()]
+    except Exception:
+        users = []
     conn.close()
     emit('users_list', {'users': users}, broadcast=True)
 
@@ -203,7 +220,7 @@ def on_load_history(data):
     target = data.get('target')
     conn, db_type = get_db()
     cur = conn.cursor()
-    if target.startsWith('#'):
+    if target.startswith('#'):
         if db_type == 'postgres':
             cur.execute("SELECT id, sender, target, message, msg_type, ttl, reply_to, reply_text, is_read, is_edited, reactions FROM messages WHERE target=%s ORDER BY id ASC", (target,))
         else:
@@ -314,7 +331,7 @@ def on_update_avatar(data):
 def on_user_typing(data):
     emit('display_typing', data, room=data.get('target'))
 
-# --- ЕДИНЫЙ МОДУЛЬ ЗВОНКОВ (WEBRTC И PUSH) ---
+# --- МОДУЛЬ ЗВОНКОВ (WEBRTC И PUSH) ---
 
 @socketio.on('call_start')
 def on_call_start(data):
@@ -420,4 +437,5 @@ def sw():
     return send_from_directory('static', 'sw.js')
 
 if __name__ == '__main__':
-    socketio.run(app, host='0.0.0.0', port=5000)
+    port = int(os.environ.get('PORT', 5000))
+    socketio.run(app, host='0.0.0.0', port=port)
