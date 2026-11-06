@@ -528,52 +528,48 @@ def handle_leave_call(data):
 def on_call_start(data):
     caller = data.get('caller')
     target = data.get('target')
+    call_type = data.get('call_type', 'audio') # 'audio' или 'video'
     room_id = data.get('roomId', f"call_{min(caller, target)}_{max(caller, target)}")
     
-    # Отправляем Web Push с тегом звонка для шторки Android/iOS
+    # 1. Отправляем Push-уведомление в шторку Android/iOS
+    call_title = "📹 Входящий видеозвонок" if call_type == 'video' else "📞 Входящий звонок"
     send_web_push(
         target, 
-        f"📞 Входящий звонок от {caller}", 
-        "Нажмите, чтобы ответить на звонок"
+        f"{call_title} от {caller}", 
+        "Нажмите, чтобы ответить"
     )
 
     call_payload = {
         'caller': caller,
         'target': target,
         'roomId': room_id,
+        'call_type': call_type,
         'offer': data.get('offer')
     }
 
-    if target not in online_users:
-        conn, db_type = get_db()
-        cur = conn.cursor()
-        msg_text = "📞 Пропущенный звонок"
-        
-        if db_type == 'postgres':
-            cur.execute("INSERT INTO messages (sender, target, message, msg_type) VALUES (%s, %s, %s, 'text') RETURNING id", (caller, target, msg_text))
-            msg_id = cur.fetchone()[0]
-        else:
-            cur.execute("INSERT INTO messages (sender, target, message, msg_type) VALUES (?, ?, ?, 'text')", (caller, target, msg_text))
-            msg_id = cur.lastrowid
-            
-        conn.commit()
-        conn.close()
-        
-        emit('call_failed', {'target': target, 'reason': 'offline'}, room=request.sid)
-    else:
-        call_msg = {
-            'id': int(time.time() * 1000),
-            'sender': caller,
-            'target': target,
-            'msg': f"📞 Входящий звонок в комнату {room_id}...",
-            'msg_type': 'call_card',
-            'roomId': room_id,
-            'is_read': 0,
-            'is_edited': 0
-        }
-        emit('new_msg', call_msg, room=target)
-        emit('new_msg', call_msg, room=caller)
+    # 2. Сохраняем системное сообщение о звонке в чат
+    msg_text = f"{call_title} в комнату {room_id}..."
+    call_msg = {
+        'id': int(time.time() * 1000),
+        'sender': caller,
+        'target': target,
+        'msg': msg_text,
+        'msg_type': 'call_card',
+        'roomId': room_id,
+        'call_type': call_type,
+        'is_read': 0,
+        'is_edited': 0
+    }
+
+    # Отправляем карточку звонка в чаты
+    emit('new_msg', call_msg, room=target)
+    emit('new_msg', call_msg, room=caller)
+
+    # 3. Если собеседник в сети — передаём сигнал вызова мгновенно
+    if target in online_users:
         emit('incoming_call', call_payload, room=target)
+    
+    # Не вызываем `call_failed` сразу! Звонящий будет ждать ответа по таймеру (30 сек) на клиенте.
 
 @socketio.on('call_accept')
 def on_call_accept(data):
