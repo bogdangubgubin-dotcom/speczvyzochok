@@ -60,9 +60,16 @@ def init_db():
                 salt TEXT NOT NULL,
                 role VARCHAR(50) DEFAULT 'user',
                 avatar TEXT DEFAULT '',
+                language VARCHAR(10) DEFAULT 'ru',
                 last_seen BIGINT DEFAULT 0
             );
         """)
+        # Миграция: добавляем колонку language, если таблица уже создана
+        try:
+            cur.execute("ALTER TABLE users ADD COLUMN language VARCHAR(10) DEFAULT 'ru';")
+        except Exception:
+            conn.rollback()
+
         cur.execute("""
             CREATE TABLE IF NOT EXISTS channels (
                 id SERIAL PRIMARY KEY,
@@ -107,9 +114,16 @@ def init_db():
                 salt TEXT NOT NULL,
                 role TEXT DEFAULT 'user',
                 avatar TEXT DEFAULT '',
+                language TEXT DEFAULT 'ru',
                 last_seen INTEGER DEFAULT 0
             )
         """)
+        # Миграция для SQLite
+        try:
+            cur.execute("ALTER TABLE users ADD COLUMN language TEXT DEFAULT 'ru'")
+        except Exception:
+            pass
+
         cur.execute("""
             CREATE TABLE IF NOT EXISTS channels (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -438,14 +452,14 @@ def on_login(data):
     cur = conn.cursor()
     
     if db_type == 'postgres':
-        cur.execute("SELECT password_hash, salt, role, avatar FROM users WHERE username = %s", (username,))
+        cur.execute("SELECT password_hash, salt, role, avatar, language FROM users WHERE username = %s", (username,))
     else:
-        cur.execute("SELECT password_hash, salt, role, avatar FROM users WHERE username = ?", (username,))
+        cur.execute("SELECT password_hash, salt, role, avatar, language FROM users WHERE username = ?", (username,))
         
     row = cur.fetchone()
 
     if row:
-        pwd_hash, salt, role, avatar = row
+        pwd_hash, salt, role, avatar, lang = row[0], row[1], row[2], row[3], row[4] if len(row) > 4 and row[4] else 'ru'
         check_hash, _ = hash_password(password, salt)
         if check_hash == pwd_hash:
             conn.close()
@@ -453,7 +467,7 @@ def on_login(data):
             user_active_chats[username] = '#general'
             join_room(username)
             join_room('#general')
-            emit('auth_response', {'status': 'ok', 'username': username, 'role': role, 'avatar': avatar})
+            emit('auth_response', {'status': 'ok', 'username': username, 'role': role, 'avatar': avatar, 'language': lang})
             on_get_users()
         else:
             conn.close()
@@ -473,14 +487,29 @@ def on_register(data):
     try:
         role = 'admin' if username == 'totr' else 'user'
         if db_type == 'postgres':
-            cur.execute("INSERT INTO users (username, password_hash, salt, role) VALUES (%s, %s, %s, %s)", (username, pwd_hash, salt, role))
+            cur.execute("INSERT INTO users (username, password_hash, salt, role, language) VALUES (%s, %s, %s, %s, 'ru')", (username, pwd_hash, salt, role))
         else:
-            cur.execute("INSERT INTO users (username, password_hash, salt, role) VALUES (?, ?, ?, ?)", (username, pwd_hash, salt, role))
+            cur.execute("INSERT INTO users (username, password_hash, salt, role, language) VALUES (?, ?, ?, ?, 'ru')", (username, pwd_hash, salt, role))
         conn.commit()
         emit('auth_response', {'status': 'error', 'message': 'Успешно! Теперь войдите.'})
     except Exception:
         emit('auth_response', {'status': 'error', 'message': 'Логин занят'})
     finally: conn.close()
+
+@socketio.on('change_language')
+def on_change_language(data):
+    user = data.get('user')
+    lang = data.get('language', 'ru')
+    if not user: return
+    conn, db_type = get_db()
+    cur = conn.cursor()
+    if db_type == 'postgres':
+        cur.execute("UPDATE users SET language = %s WHERE username = %s", (lang, user))
+    else:
+        cur.execute("UPDATE users SET language = ? WHERE username = ?", (lang, user))
+    conn.commit()
+    conn.close()
+    emit('language_changed', {'language': lang})
 
 # --- WEBRTC ЗВОНКИ ---
 
@@ -530,7 +559,6 @@ def on_call_start(data):
     target = data.get('target')
     room_id = data.get('roomId', f"call_{min(caller, target)}_{max(caller, target)}")
     
-    # Отправляем Web Push с тегом звонка для шторки Android/iOS
     send_web_push(
         target, 
         f"📞 Входящий звонок от {caller}", 
