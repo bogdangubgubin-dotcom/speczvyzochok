@@ -64,7 +64,6 @@ def init_db():
                 last_seen BIGINT DEFAULT 0
             );
         """)
-        # Миграция: добавляем колонку language, если таблица уже создана
         try:
             cur.execute("ALTER TABLE users ADD COLUMN language VARCHAR(10) DEFAULT 'ru';")
         except Exception:
@@ -118,7 +117,6 @@ def init_db():
                 last_seen INTEGER DEFAULT 0
             )
         """)
-        # Миграция для SQLite
         try:
             cur.execute("ALTER TABLE users ADD COLUMN language TEXT DEFAULT 'ru'")
         except Exception:
