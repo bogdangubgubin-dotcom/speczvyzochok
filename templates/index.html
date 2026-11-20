@@ -58,7 +58,7 @@
         #chat-main { flex: 1; display: flex; flex-direction: column; background: var(--bg-color); min-width: 0; height: 100dvh; position: relative; }
         header { height: 56px; background: var(--panel-bg); padding: 0 12px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--panel-border); flex-shrink: 0; width: 100%; }
         .header-left { display: flex; align-items: center; gap: 8px; }
-        .toggle-btn { width: 36px; height: 36px; background: var(--item-hover); border: 1px solid var(--panel-border); font-size: 18px; border-radius: 8px; color: var(--text-color); cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+        .toggle-btn { width: 36px; height: 36px; margin: 0; background: var(--item-hover); border: 1px solid var(--panel-border); font-size: 18px; border-radius: 8px; color: var(--text-color); cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
 
         #pinned-bar { display: none; background: var(--item-hover); padding: 6px 15px; border-bottom: 1px solid var(--panel-border); font-size: 13px; color: #3B8ED0; justify-content: space-between; align-items: center; }
 
@@ -76,9 +76,10 @@
 
         .call-card { background: var(--panel-bg); border: 1px solid #3B8ED0; border-radius: 12px; padding: 12px; width: 100%; max-width: 280px; align-self: center; margin: 10px 0; text-align: center; }
         .call-card-btns { display: flex; gap: 10px; margin-top: 10px; justify-content: center; }
-        .call-card-btns button { width: auto; padding: 6px 16px; font-size: 13px; }
+        .call-card-btns button { width: auto; padding: 6px 16px; font-size: 13px; margin: 0; }
 
-        .video-note { width: 160px; height: 160px; border-radius: 12px; object-fit: cover; border: 2px solid var(--panel-border); background: #000; cursor: pointer; }
+        .video-note-wrap { position: relative; width: 170px; height: 170px; border-radius: 12px; overflow: hidden; border: 2px solid var(--panel-border); background: #000; }
+        .video-note { width: 100%; height: 100%; object-fit: cover; display: block; background: #000; cursor: pointer; }
 
         .msg-status { font-size: 10px; align-self: flex-end; margin-top: 2px; opacity: 0.8; }
         .msg-me .msg-status { color: #bbdefb; }
@@ -86,7 +87,7 @@
 
         .msg-actions { display: none; position: absolute; top: -26px; right: 0; background: var(--panel-bg); border-radius: 12px; padding: 3px 8px; gap: 6px; border: 1px solid var(--panel-border); z-index: 50; box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
         .message:hover .msg-actions, .message:focus .msg-actions, .message.active-touch .msg-actions { display: flex; }
-        .action-btn { cursor: pointer; font-size: 13px; padding: 2px 4px; color: var(--text-color); border: none; background: transparent; }
+        .action-btn { cursor: pointer; font-size: 13px; padding: 2px 4px; color: var(--text-color); border: none; background: transparent; margin: 0; width: auto; }
         .action-btn:hover { transform: scale(1.2); }
 
         .reactions-list { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 4px; }
@@ -101,9 +102,9 @@
             bottom: 0; 
             left: 0; 
             right: 0; 
-            min-height: 56px; 
+            height: 54px; 
             background: var(--panel-bg); 
-            padding: 6px 10px; 
+            padding: 0 10px; 
             display: flex; 
             gap: 6px; 
             border-top: 1px solid var(--panel-border); 
@@ -111,16 +112,98 @@
             justify-content: space-between;
             z-index: 99; 
         }
-        .footer-left-btns, .footer-right-btns { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
-        footer input[type="text"] { flex: 1; height: 38px; background: var(--bg-color); color: var(--text-color); border: 1px solid var(--panel-border); border-radius: 10px; padding: 0 12px; font-size: 15px; outline: none; min-width: 0; }
-        footer button#send-btn { width: 38px; height: 38px; border-radius: 10px; padding: 0; flex-shrink: 0; font-size: 16px; display: flex; align-items: center; justify-content: center; margin: 0; }
-        .icon-btn { background: var(--item-hover); border: 1px solid var(--panel-border); border-radius: 8px; width: 34px; height: 38px; padding: 0; display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--text-color); flex-shrink: 0; font-size: 14px; }
+        .footer-left-btns, .footer-right-btns { 
+            display: flex; 
+            align-items: center; 
+            gap: 6px; 
+            flex-shrink: 0; 
+            height: 38px;
+        }
+        footer input[type="text"] { 
+            flex: 1; 
+            height: 38px; 
+            margin: 0;
+            background: var(--bg-color); 
+            color: var(--text-color); 
+            border: 1px solid var(--panel-border); 
+            border-radius: 10px; 
+            padding: 0 12px; 
+            font-size: 15px; 
+            outline: none; 
+            min-width: 0; 
+        }
+        footer button, footer label, footer select {
+            margin: 0 !important;
+        }
+        footer button#send-btn { 
+            width: 38px; 
+            height: 38px; 
+            border-radius: 10px; 
+            padding: 0; 
+            flex-shrink: 0; 
+            font-size: 16px; 
+            display: flex; 
+            align-items: center; 
+            justify-content: center; 
+        }
+        .icon-btn { 
+            background: var(--item-hover); 
+            border: 1px solid var(--panel-border); 
+            border-radius: 10px; 
+            width: 38px; 
+            height: 38px; 
+            padding: 0; 
+            margin: 0;
+            display: inline-flex; 
+            align-items: center; 
+            justify-content: center; 
+            cursor: pointer; 
+            color: var(--text-color); 
+            flex-shrink: 0; 
+            font-size: 16px; 
+            line-height: 1;
+            vertical-align: middle;
+        }
+        select.icon-btn {
+            width: auto;
+            min-width: 44px;
+            padding: 0 4px;
+            font-size: 11px;
+            font-weight: bold;
+            text-align: center;
+        }
         .recording { background: #c62828 !important; color: #fff !important; }
 
         .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100dvh; background: rgba(0,0,0,0.85); z-index: 1000; justify-content: center; align-items: center; padding: 15px; }
         .modal-box { background: var(--panel-bg); border: 1px solid var(--panel-border); border-radius: 12px; width: 100%; max-width: 480px; max-height: 90vh; display: flex; flex-direction: column; overflow: hidden; }
         .modal-header { padding: 15px; background: var(--item-hover); border-bottom: 1px solid var(--panel-border); display: flex; justify-content: space-between; align-items: center; }
-        .modal-body { padding: 15px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 12px; }
+        .modal-body { padding: 15px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 10px; }
+
+        .region-select-box {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            background: var(--item-hover);
+            padding: 10px 12px;
+            border-radius: 10px;
+            border: 1px solid var(--panel-border);
+        }
+        .region-select-box label {
+            font-size: 12px;
+            color: #aaa;
+            font-weight: bold;
+        }
+        .region-select-box select {
+            width: 100%;
+            padding: 10px;
+            border-radius: 8px;
+            border: 1px solid var(--panel-border);
+            background: var(--bg-color);
+            color: var(--text-color);
+            font-size: 14px;
+            outline: none;
+            cursor: pointer;
+        }
 
         .room-item { background: var(--item-hover); border: 1px solid var(--panel-border); border-radius: 10px; padding: 12px; display: flex; justify-content: space-between; align-items: center; }
         .room-title { font-weight: bold; font-size: 15px; }
@@ -137,12 +220,12 @@
         .audio-meter-bar { height: 100%; width: 0%; background: #4caf50; transition: width 0.04s ease; }
 
         .logout-btn { background: transparent; border: 1px solid #555; color: #aaa; padding: 4px 8px; font-size: 12px; border-radius: 6px; cursor: pointer; width: auto; flex-shrink: 0; margin: 0; }
-        .admin-nav-btn { background: #d32f2f; color: #fff; padding: 5px 8px; font-size: 11px; border-radius: 6px; border: none; font-weight: bold; cursor: pointer; display: none; }
+        .admin-nav-btn { background: #d32f2f; color: #fff; padding: 5px 8px; font-size: 11px; border-radius: 6px; border: none; font-weight: bold; cursor: pointer; display: none; margin: 0; width: auto; }
 
-        .avatar-upload-box { display: flex; flex-direction: column; align-items: center; gap: 10px; margin-bottom: 10px; }
-        .big-avatar { width: 70px; height: 70px; border-radius: 50%; background: #3B8ED0; display: flex; align-items: center; justify-content: center; font-size: 28px; font-weight: bold; color: #fff; background-size: cover; background-position: center; border: 2px solid #555; }
+        .avatar-upload-box { display: flex; flex-direction: column; align-items: center; gap: 10px; margin-bottom: 6px; }
+        .big-avatar { width: 70px; height: 70px; border-radius: 50%; background: #3B8ED0; display: flex; align-items: center; justify-content: center; font-size: 28px; font-weight: bold; color: #fff; background-size: cover; background-position: center; border: 2px solid #555; cursor: pointer; }
 
-        #emoji-picker { display: none; position: absolute; bottom: 60px; left: 10px; background: var(--panel-bg); border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px; grid-template-columns: repeat(5, 1fr); gap: 8px; z-index: 100; font-size: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
+        #emoji-picker { display: none; position: absolute; bottom: 60px; left: 10px; background: var(--panel-bg); border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px; z-index: 100; font-size: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
         #emoji-picker span { cursor: pointer; text-align: center; }
         #emoji-picker span:hover { transform: scale(1.3); }
 
@@ -156,7 +239,6 @@
 
         .admin-user-row { display: flex; justify-content: space-between; align-items: center; background: var(--item-hover); padding: 8px 12px; border-radius: 8px; border: 1px solid var(--panel-border); font-size: 13px; }
 
-        /* ЭКРАН ГРУППОВОГО WEBRTC ЗВОНКА */
         #group-call-screen { position: fixed; top: 0; left: 0; width: 100vw; height: 100dvh; background: rgba(0,0,0,0.95); z-index: 3500; display: flex; flex-direction: column; }
         #group-call-screen.hidden { display: none; }
         .video-grid { flex: 1; display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; padding: 15px; overflow-y: auto; }
@@ -164,18 +246,19 @@
         .video-card video { width: 100%; height: 100%; object-fit: cover; }
         .video-card .user-label { position: absolute; bottom: 8px; left: 8px; background: rgba(0,0,0,0.7); padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: bold; }
         .group-call-controls { display: flex; justify-content: center; gap: 8px; padding: 15px; background: var(--panel-bg); border-top: 1px solid var(--panel-border); flex-wrap: wrap; }
-        .ctrl-btn { padding: 10px 14px; border-radius: 8px; border: none; background: var(--item-hover); color: #fff; font-weight: bold; cursor: pointer; font-size: 12px; }
+        .ctrl-btn { padding: 10px 14px; border-radius: 8px; border: none; background: var(--item-hover); color: #fff; font-weight: bold; cursor: pointer; font-size: 12px; width: auto; margin: 0; }
         .ctrl-btn.off { background: #d32f2f; }
         .btn-danger { background: #c62828; }
 
-        #call-modal { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100dvh; background: rgba(0,0,0,0.85); z-index: 3000; flex-direction: column; justify-content: center; align-items: center; gap: 20px; }
-        .call-avatar { width: 100px; height: 100px; border-radius: 50%; font-size: 36px; display: flex; align-items: center; justify-content: center; border: 3px solid #3B8ED0; }
+        #call-modal { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100dvh; background: rgba(0,0,0,0.85); z-index: 4000; flex-direction: column; justify-content: center; align-items: center; gap: 20px; }
+        .call-avatar { width: 100px; height: 100px; border-radius: 50%; font-size: 36px; display: flex; align-items: center; justify-content: center; border: 3px solid #3B8ED0; background-size: cover; background-position: center; }
 
         @media (max-width: 600px) {
             #sidebar { position: fixed; left: 0; top: 0; bottom: 0; width: 80%; max-width: 280px; transform: translateX(-100%); }
             #sidebar.open { transform: translateX(0); }
             .poker-table { grid-template-columns: repeat(2, 1fr); border-radius: 30px; }
-            .video-note { width: 130px; height: 130px; }
+            .video-note-wrap { width: 145px; height: 145px; }
+            .icon-btn, footer button#send-btn { width: 34px; height: 36px; font-size: 15px; }
         }
     </style>
 </head>
@@ -184,10 +267,10 @@
     <div id="auth-screen">
         <div class="auth-box">
             <h2>Спецзвязочок</h2>
-            <input type="text" id="username" placeholder="Логин">
-            <input type="password" id="password" placeholder="Пароль">
-            <button onclick="login()">Войти</button>
-            <button onclick="register()" style="background: transparent; border: 1px solid #1F6AA5;">Регистрация</button>
+            <input type="text" id="username" data-i18n-ph="ph_login" placeholder="Логин">
+            <input type="password" id="password" data-i18n-ph="ph_pass" placeholder="Пароль">
+            <button onclick="login()" data-i18n="btn_login">Войти</button>
+            <button onclick="register()" style="background: transparent; border: 1px solid #1F6AA5;" data-i18n="btn_register">Регистрация</button>
             <div id="status" style="margin-top:10px; font-size:13px; color:#ff5555;"></div>
         </div>
     </div>
@@ -201,15 +284,15 @@
                     <div id="my-avatar" class="avatar">?</div>
                     <span id="user-display" style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:14px;">...</span>
                 </div>
-                <button class="logout-btn" onclick="logout()">Выйти</button>
+                <button class="logout-btn" onclick="logout()" data-i18n="btn_logout">Выйти</button>
             </div>
             <div class="chat-list">
                 <div class="section-title">
-                    <span>Каналы</span>
-                    <button onclick="createChannelPrompt()" style="width:auto; padding:0 6px; height:20px; font-size:12px;">+</button>
+                    <span data-i18n="title_channels">Каналы</span>
+                    <button onclick="createChannelPrompt()" style="width:auto; padding:0 6px; height:20px; font-size:12px; margin:0;">+</button>
                 </div>
                 <div id="channels-list"></div>
-                <div class="section-title">Личные чаты</div>
+                <div class="section-title" data-i18n="title_dms">Личные чаты</div>
                 <div id="users-list"></div>
             </div>
         </div>
@@ -225,33 +308,33 @@
                     </div>
                 </div>
                 <div style="display:flex; align-items:center; gap:6px;">
-                    <button id="group-call-btn" class="icon-btn" style="height:32px; width:auto; padding:0 8px; font-size:12px; background:#2e7d32;" onclick="startGroupCall()" title="Комната видеозвонка">📞 Звонок</button>
-                    <button id="call-btn" class="icon-btn" style="height:32px; width:36px; display:none;" onclick="startDirectCall()" title="Личный звонок">📞</button>
-                    <button class="icon-btn" style="height:32px; width:auto; padding:0 8px; font-size:12px;" onclick="openGalleryModal()">🖼️ Медиа</button>
-                    <button id="admin-btn" class="admin-nav-btn" onclick="openAdminModal()">⚙️ Админка</button>
+                    <button id="group-call-btn" class="icon-btn" style="height:32px; width:auto; padding:0 8px; font-size:12px; background:#2e7d32; margin:0;" onclick="startGroupCall()" title="Видеозвонок" data-i18n="btn_video_call">📹 Видео</button>
+                    <button id="call-btn" class="icon-btn" style="height:32px; width:36px; display:none; margin:0;" onclick="startDirectCall()" title="Аудиозвонок">📞</button>
+                    <button class="icon-btn" style="height:32px; width:auto; padding:0 8px; font-size:12px; margin:0;" onclick="openGalleryModal()" data-i18n="btn_media">🖼️ Медиа</button>
+                    <button id="admin-btn" class="admin-nav-btn" onclick="openAdminModal()" data-i18n="btn_admin">⚙️ Админка</button>
                 </div>
             </header>
 
             <div id="pinned-bar">
                 <span>📌 <b id="pinned-msg-text">...</b></span>
-                <button onclick="unpinMsg()" style="width:auto; padding:0 6px; background:transparent; border:none; color:#aaa; cursor:pointer;">✕</button>
+                <button onclick="unpinMsg()" style="width:auto; padding:0 6px; background:transparent; border:none; color:#aaa; cursor:pointer; margin:0;">✕</button>
             </div>
 
             <div class="search-bar">
-                <input type="text" id="search-input" placeholder="🔍 Поиск по сообщениям..." oninput="searchMessages()">
+                <input type="text" id="search-input" data-i18n-ph="ph_search" placeholder="🔍 Поиск по сообщениям..." oninput="searchMessages()">
             </div>
 
             <div class="chat-container" id="messages"></div>
 
             <div id="reply-bar">
                 <span id="reply-text">Ответ...</span>
-                <button onclick="cancelReply()" style="width:auto; padding:2px 8px; background:transparent; border:none; color:#aaa; cursor:pointer;">✕</button>
+                <button onclick="cancelReply()" style="width:auto; padding:2px 8px; background:transparent; border:none; color:#aaa; cursor:pointer; margin:0;">✕</button>
             </div>
 
             <div id="emoji-picker">
                 <div style="display:flex; gap:10px; border-bottom:1px solid var(--panel-border); padding-bottom:5px; margin-bottom:5px; font-size:13px; font-weight:bold;">
-                    <span onclick="switchPickerTab('emoji')" style="cursor:pointer; color:#3B8ED0;">😃 Смайлы</span>
-                    <span onclick="switchPickerTab('stickers')" style="cursor:pointer; color:#3B8ED0;">🎨 Стикеры</span>
+                    <span onclick="switchPickerTab('emoji')" style="cursor:pointer; color:#3B8ED0;" data-i18n="tab_emoji">😃 Смайлы</span>
+                    <span onclick="switchPickerTab('stickers')" style="cursor:pointer; color:#3B8ED0;" data-i18n="tab_stickers">🎨 Стикеры</span>
                 </div>
                 <div id="tab-emoji" style="display:grid; grid-template-columns: repeat(5, 1fr); gap:8px;">
                     <span onclick="addEmoji('👍')">👍</span><span onclick="addEmoji('❤️')">❤️</span><span onclick="addEmoji('🔥')">🔥</span>
@@ -275,12 +358,12 @@
                     <button class="icon-btn" onclick="toggleEmojiPicker()" title="Смайлы и стикеры">😀</button>
                 </div>
 
-                <input type="text" id="msg-input" placeholder="Сообщение..." oninput="notifyTyping()" onkeypress="if(event.key==='Enter') sendMsg()">
+                <input type="text" id="msg-input" data-i18n-ph="ph_msg" placeholder="Сообщение..." oninput="notifyTyping()" onkeypress="if(event.key==='Enter') sendMsg()">
 
                 <div class="footer-right-btns">
                     <button id="voice-record-btn" class="icon-btn" onclick="toggleVoiceRecord()" title="Голосовое">🎤</button>
                     <button id="video-record-btn" class="icon-btn" onclick="toggleVideoNoteRecord()" title="Видео-квадрат">📹</button>
-                    <select id="ttl-select" class="icon-btn" style="padding:0; font-size:11px;" title="Таймер">
+                    <select id="ttl-select" class="icon-btn" title="Таймер">
                         <option value="0">Off</option>
                         <option value="10">10s</option>
                         <option value="60">1m</option>
@@ -291,39 +374,39 @@
         </div>
     </div>
 
-    <!-- ЭКРАН ГРУППОВОГО/ИНДИВИДУАЛЬНОГО WEBRTC ЗВОНКА -->
+    <!-- ЭКРАН ВИДЕОЗВОНКА -->
     <div id="group-call-screen" class="hidden">
         <div id="video-grid" class="video-grid">
             <div class="video-card" id="local-user-card">
                 <video id="local-video" autoplay muted playsinline></video>
-                <span class="user-label">Вы</span>
+                <span class="user-label" data-i18n="label_you">Вы</span>
             </div>
         </div>
         <div class="group-call-controls">
             <button id="btn-group-mic" class="ctrl-btn" onclick="toggleGroupMic()">🎤 Микрофон: Вкл</button>
             <button id="btn-group-cam" class="ctrl-btn" onclick="toggleGroupCam()">📷 Камера: Вкл</button>
-            <button id="btn-flip-cam" class="ctrl-btn" onclick="toggleFlipCam()">🔄 Камера</button>
-            <button class="ctrl-btn btn-danger" onclick="leaveGroupCall()">📞 Завершить</button>
+            <button id="btn-flip-cam" class="ctrl-btn" onclick="toggleFlipCam()" data-i18n="btn_flip">🔄 Камера</button>
+            <button class="ctrl-btn btn-danger" onclick="endCall()" data-i18n="btn_end_call">📞 Завершить</button>
         </div>
     </div>
 
-    <!-- ОКНО ГОЛОСОВОГО ВХОДЯЩЕГО ЗВОНКА 1-НА-1 -->
+    <!-- ОКНО ВХОДЯЩЕГО / ИСХОДЯЩЕГО ЗВОНКА (АУДИО И ВИДЕО) -->
     <div id="call-modal">
         <div id="call-user-avatar" class="call-avatar">?</div>
         <h3 id="call-user-name">Звонок...</h3>
         <p id="call-status-text" style="color:#aaa; font-size:14px; text-align:center; padding:0 10px;">Вызов...</p>
         <div style="display:flex; gap:15px;">
-            <button id="accept-call-btn" style="background:#2e7d32; width:auto; padding:10px 20px; display:none;" onclick="acceptCall()">Принять</button>
-            <button style="background:#c62828; width:auto; padding:10px 20px;" onclick="endCall()">Сбросить</button>
+            <button id="accept-call-btn" style="background:#2e7d32; width:auto; padding:10px 20px; display:none;" onclick="acceptCall()" data-i18n="btn_accept">Принять</button>
+            <button style="background:#c62828; width:auto; padding:10px 20px;" onclick="endCall()" data-i18n="btn_decline">Сбросить</button>
         </div>
     </div>
 
-    <!-- МЕДИА-ГАЛЕРЕЯ ЧАТА -->
+    <!-- ГАЛЕРЕЯ -->
     <div id="gallery-modal" class="modal-overlay">
         <div class="modal-box">
             <div class="modal-header">
-                <h3>🖼️ Галерея медиафайлов</h3>
-                <button onclick="closeGalleryModal()" style="width:auto; padding:4px 10px; background:#444;">✕</button>
+                <h3 data-i18n="title_gallery">🖼️ Галерея медиафайлов</h3>
+                <button onclick="closeGalleryModal()" style="width:auto; padding:4px 10px; background:#444; margin:0;">✕</button>
             </div>
             <div class="modal-body">
                 <div id="gallery-container" class="media-grid"></div>
@@ -335,57 +418,71 @@
     <div id="user-info-modal" class="modal-overlay">
         <div class="modal-box">
             <div class="modal-header">
-                <h3>Карточка пользователя</h3>
-                <button onclick="closeUserInfoModal()" style="width:auto; padding:4px 10px; background:#444;">✕</button>
+                <h3 data-i18n="title_user_card">Карточка пользователя</h3>
+                <button onclick="closeUserInfoModal()" style="width:auto; padding:4px 10px; background:#444; margin:0;">✕</button>
             </div>
             <div class="modal-body" style="text-align:center;">
                 <div id="info-user-avatar" class="big-avatar" style="margin: 0 auto 10px auto;">?</div>
                 <h3 id="info-user-name">...</h3>
                 <p id="info-user-role" style="font-size:12px; color:#3B8ED0; margin-bottom:10px;">User</p>
-                <button id="info-pm-btn" style="background:#1F6AA5;">💬 Написать в личку</button>
+                <button id="info-pm-btn" style="background:#1F6AA5;" data-i18n="btn_write_pm">💬 Написать в личку</button>
             </div>
         </div>
     </div>
 
-    <!-- МОДАЛЬНОЕ ОКНО ПРОФИЛЯ -->
+    <!-- МОДАЛЬНОЕ ОКНО ПРОФИЛЯ (ЯЗЫК + РЕГИОН) -->
     <div id="profile-modal" class="modal-overlay">
         <div class="modal-box">
             <div class="modal-header">
-                <h3>👤 Настройки Профиля</h3>
-                <button onclick="closeProfileModal()" style="width:auto; padding:4px 10px; background:#444;">✕</button>
+                <h3 data-i18n="title_profile">👤 Настройки Профиля</h3>
+                <button onclick="closeProfileModal()" style="width:auto; padding:4px 10px; background:#444; margin:0;">✕</button>
             </div>
             <div class="modal-body">
                 <div class="avatar-upload-box">
                     <div id="profile-big-avatar" class="big-avatar" onclick="openLightbox(this.style.backgroundImage)">?</div>
-                    <label style="background:#333; padding:6px 12px; border-radius:8px; border:1px solid #555; font-size:12px; cursor:pointer;">
+                    <label style="background:#333; padding:6px 12px; border-radius:8px; border:1px solid #555; font-size:12px; cursor:pointer;" data-i18n="btn_change_avatar">
                         📷 Изменить аватарку
                         <input type="file" id="avatar-input" accept="image/*" style="display:none;" onchange="uploadAvatar()">
                     </label>
                 </div>
 
-                <button onclick="requestPushPermission()" style="background:#1F6AA5; margin-bottom:5px; padding:12px;">🔔 Разрешить Push-уведомления (Фон)</button>
-                <button onclick="toggleTheme()" style="background:#444; margin-bottom:5px;">🌗 Сменить тему оформления</button>
-                <button onclick="openMafiaModal()" style="background:#8e24aa; margin-bottom:10px; padding:12px;">🕵️ Игра «Мафия»</button>
+                <!-- ВЫБОР РЕГИОНА -->
+                <div class="region-select-box">
+                    <label for="regionSelect" data-i18n="label_region">🌍 Регион подключения (Сервер):</label>
+                    <select id="regionSelect" onchange="changeRegion(this.value)">
+                        <option value="auto" data-i18n="reg_auto">🌐 Авто (Оптимальный)</option>
+                        <option value="eu" data-i18n="reg_eu">🇪🇺 Европа (Frankfurt / EU)</option>
+                        <option value="ua" data-i18n="reg_ua">🇺🇦 Украина / Восточная Европа</option>
+                        <option value="us" data-i18n="reg_us">🇺🇸 США (US-East)</option>
+                        <option value="asia" data-i18n="reg_asia">🇸🇬 Азия (Singapore)</option>
+                    </select>
+                </div>
 
-                <hr style="border:0; border-top:1px solid var(--panel-border); margin:10px 0;">
-                <h4 style="font-size:14px; color:#aaa;">Смена пароля</h4>
-                <input type="password" id="old-pass" placeholder="Старый пароль">
-                <input type="password" id="new-pass" placeholder="Новый пароль">
-                <button onclick="changePassword()" style="background:#2e7d32;">Сохранить новый пароль</button>
+                <!-- ПЕРЕКЛЮЧАТЕЛЬ ЯЗЫКА -->
+                <button id="langToggleBtn" onclick="toggleLanguage()" style="background:#2e7d32; margin-top:4px; padding:12px;">🌐 Язык / Language: RU</button>
+                <button onclick="requestPushPermission()" style="background:#1F6AA5; margin-top:4px; padding:12px;" data-i18n="btn_push">🔔 Разрешить Push-уведомления (Фон)</button>
+                <button onclick="toggleTheme()" style="background:#444; margin-top:4px;" data-i18n="btn_theme">🌗 Сменить тему оформления</button>
+                <button onclick="openMafiaModal()" style="background:#8e24aa; margin-top:4px; padding:12px;" data-i18n="btn_mafia">🕵️ Игра «Мафия»</button>
+
+                <hr style="border:0; border-top:1px solid var(--panel-border); margin:8px 0;">
+                <h4 style="font-size:14px; color:#aaa;" data-i18n="title_change_pass">Смена пароля</h4>
+                <input type="password" id="old-pass" data-i18n-ph="ph_old_pass" placeholder="Старый пароль">
+                <input type="password" id="new-pass" data-i18n-ph="ph_new_pass" placeholder="Новый пароль">
+                <button onclick="changePassword()" style="background:#2e7d32;" data-i18n="btn_save_pass">Сохранить новый пароль</button>
                 <div id="pass-status" style="font-size:12px; text-align:center; color:#ff5555;"></div>
             </div>
         </div>
     </div>
 
-    <!-- МОДАЛЬНОЕ ОКНО АДМИНКИ -->
+    <!-- АДМИНКА -->
     <div id="admin-modal" class="modal-overlay">
         <div class="modal-box">
             <div class="modal-header">
-                <h3>⚙️ Панель Администратора</h3>
-                <button onclick="closeAdminModal()" style="width:auto; padding:4px 10px; background:#444;">✕</button>
+                <h3 data-i18n="title_admin">⚙️ Панель Администратора</h3>
+                <button onclick="closeAdminModal()" style="width:auto; padding:4px 10px; background:#444; margin:0;">✕</button>
             </div>
             <div class="modal-body">
-                <p style="font-size:13px; color:#aaa; margin-bottom:10px;">Управление пользователями системы:</p>
+                <p style="font-size:13px; color:#aaa; margin-bottom:10px;" data-i18n="desc_admin">Управление пользователями системы:</p>
                 <div id="admin-users-list" style="display:flex; flex-direction:column; gap:8px;"></div>
             </div>
         </div>
@@ -396,17 +493,17 @@
         <div class="modal-box">
             <div class="modal-header">
                 <h3 id="mafia-modal-title">🕵️ Лобби комнат «Мафии»</h3>
-                <button onclick="closeMafiaModal()" style="width:auto; padding:4px 10px; background:#444;">✕</button>
+                <button onclick="closeMafiaModal()" style="width:auto; padding:4px 10px; background:#444; margin:0;">✕</button>
             </div>
             <div class="modal-body">
                 <div id="mafia-rooms-screen">
-                    <p style="font-size:13px; color:#aaa; margin-bottom:10px;">Выберите свободную комнату для игры:</p>
+                    <p style="font-size:13px; color:#aaa; margin-bottom:10px;" data-i18n="mafia_choose">Выберите свободную комнату для игры:</p>
                     <div id="mafia-rooms-container" style="display:flex; flex-direction:column; gap:8px;"></div>
                 </div>
 
                 <div id="mafia-gameplay-screen" style="display:none;">
                     <div style="display:flex; justify-content:space-between; align-items:center;">
-                        <button onclick="backToMafiaRooms()" style="width:auto; padding:6px 12px; background:#444; font-size:12px;">← Назад</button>
+                        <button onclick="backToMafiaRooms()" style="width:auto; padding:6px 12px; background:#444; font-size:12px; margin:0;" data-i18n="btn_back">← Назад</button>
                         <span id="room-phase-badge" style="background:#3B8ED0; padding:4px 8px; border-radius:6px; font-size:12px; font-weight:bold;">Лобби</span>
                         <span id="mafia-timer-badge" style="background:#d32f2f; padding:4px 8px; border-radius:6px; font-size:12px; font-weight:bold; display:none;">⏱ 60s</span>
                     </div>
@@ -414,33 +511,173 @@
                     <div class="poker-table" id="poker-table-slots"></div>
 
                     <div style="display:flex; justify-content:space-between; align-items:center; font-size:13px;">
-                        <div>Моя роль: <b id="my-role-text">Скрыта</b> <button onclick="toggleRoleShow()" style="width:auto; padding:2px 6px; font-size:10px;">👁</button></div>
-                        <button id="mic-toggle-btn" onclick="toggleMic()" style="width:auto; padding:4px 10px; font-size:11px; background:#c62828;">🔇 Микрофон ВЫКЛ</button>
+                        <div><span data-i18n="mafia_role">Моя роль:</span> <b id="my-role-text">Скрыта</b> <button onclick="toggleRoleShow()" style="width:auto; padding:2px 6px; font-size:10px; margin:0;">👁</button></div>
+                        <button id="mic-toggle-btn" onclick="toggleMic()" style="width:auto; padding:4px 10px; font-size:11px; background:#c62828; margin:0;">🔇 Микрофон ВЫКЛ</button>
                     </div>
 
                     <div style="display:flex; gap:8px; margin-top:5px;">
-                        <button id="join-room-btn" onclick="joinActiveRoom()" style="background:#1F6AA5;">Занять место</button>
-                        <button id="leave-room-btn" onclick="leaveActiveRoom()" style="background:#c62828; display:none;">Встать из-за стола</button>
-                        <button onclick="startActiveRoomGame()" style="background:#2e7d32;">Старт игры</button>
+                        <button id="join-room-btn" onclick="joinActiveRoom()" style="background:#1F6AA5;" data-i18n="btn_take_seat">Занять место</button>
+                        <button id="leave-room-btn" onclick="leaveActiveRoom()" style="background:#c62828; display:none;" data-i18n="btn_leave_seat">Встать из-за стола</button>
+                        <button onclick="startActiveRoomGame()" style="background:#2e7d32;" data-i18n="btn_start_game">Старт игры</button>
                     </div>
 
-                    <h4 style="font-size:13px; margin-top:5px;">События игры:</h4>
+                    <h4 style="font-size:13px; margin-top:5px;" data-i18n="title_logs">События игры:</h4>
                     <div id="room-logs-box" style="background:#151515; border:1px solid #333; padding:8px; border-radius:8px; font-size:12px; height:90px; overflow-y:auto; color:#aaa;"></div>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- ЛАЙТБОКС С ПОДДЕРЖКОЙ ВИДЕО И КАРТИНОК -->
+    <!-- ЛАЙТБОКС -->
     <div id="lightbox" onclick="closeLightbox()">
         <img id="lightbox-img" src="" style="display:none;">
-        <video id="lightbox-video" controls autoplay loop playsinline style="display:none; max-width:90%; max-height:90%; border-radius:12px;"></video>
+        <video id="lightbox-video" controls autoplay loop playsinline webkit-playsinline style="display:none; max-width:90%; max-height:90%; border-radius:12px;"></video>
     </div>
 
     <div id="audio-peers-container" style="display:none;"></div>
     <audio id="direct-call-audio" autoplay playsinline style="display:none;"></audio>
 
     <script>
+        let currentLang = localStorage.getItem('pychat_lang') || 'ru';
+        let currentRegion = localStorage.getItem('pychat_region') || 'auto';
+
+        const i18n = {
+            ru: {
+                ph_login: "Логин",
+                ph_pass: "Пароль",
+                btn_login: "Войти",
+                btn_register: "Регистрация",
+                btn_logout: "Выйти",
+                title_channels: "Каналы",
+                title_dms: "Личные чаты",
+                btn_video_call: "📹 Видео",
+                btn_media: "🖼️ Медиа",
+                btn_admin: "⚙️ Админка",
+                ph_search: "🔍 Поиск по сообщениям...",
+                ph_msg: "Сообщение...",
+                tab_emoji: "😃 Смайлы",
+                tab_stickers: "🎨 Стикеры",
+                label_you: "Вы",
+                btn_flip: "🔄 Камера",
+                btn_end_call: "📞 Завершить",
+                btn_accept: "Принять",
+                btn_decline: "Сбросить",
+                title_gallery: "🖼️ Галерея медиафайлов",
+                title_user_card: "Карточка пользователя",
+                btn_write_pm: "💬 Написать в личку",
+                title_profile: "👤 Настройки Профиля",
+                btn_change_avatar: "📷 Изменить аватарку",
+                label_region: "🌍 Регион подключения (Сервер):",
+                reg_auto: "🌐 Авто (Оптимальный)",
+                reg_eu: "🇪🇺 Европа (Frankfurt / EU)",
+                reg_ua: "🇺🇦 Украина / Восточная Европа",
+                reg_us: "🇺🇸 США (US-East)",
+                reg_asia: "🇸🇬 Азия (Singapore)",
+                btn_push: "🔔 Разрешить Push-уведомления (Фон)",
+                btn_theme: "🌗 Сменить тему оформления",
+                btn_mafia: "🕵️ Игра «Мафия»",
+                title_change_pass: "Смена пароля",
+                ph_old_pass: "Старый пароль",
+                ph_new_pass: "Новый пароль",
+                btn_save_pass: "Сохранить новый пароль",
+                title_admin: "⚙️ Панель Администратора",
+                desc_admin: "Управление пользователями системы:",
+                mafia_choose: "Выберите свободную комнату для игры:",
+                btn_back: "← Назад",
+                mafia_role: "Моя роль:",
+                btn_take_seat: "Занять место",
+                btn_leave_seat: "Встать из-за стола",
+                btn_start_game: "Старт игры",
+                title_logs: "События игры:",
+                btn_lang: "🌐 Язык / Language: RU",
+                saved_chat: "Избранное"
+            },
+            en: {
+                ph_login: "Username",
+                ph_pass: "Password",
+                btn_login: "Log In",
+                btn_register: "Register",
+                btn_logout: "Logout",
+                title_channels: "Channels",
+                title_dms: "Direct Messages",
+                btn_video_call: "📹 Video",
+                btn_media: "🖼️ Media",
+                btn_admin: "⚙️ Admin Panel",
+                ph_search: "🔍 Search messages...",
+                ph_msg: "Type a message...",
+                tab_emoji: "😃 Emojis",
+                tab_stickers: "🎨 Stickers",
+                label_you: "You",
+                btn_flip: "🔄 Flip Cam",
+                btn_end_call: "📞 End Call",
+                btn_accept: "Accept",
+                btn_decline: "Decline",
+                title_gallery: "🖼️ Media Gallery",
+                title_user_card: "User Profile",
+                btn_write_pm: "💬 Send Message",
+                title_profile: "👤 Profile Settings",
+                btn_change_avatar: "📷 Change Avatar",
+                label_region: "🌍 Connection Region (Server):",
+                reg_auto: "🌐 Auto (Optimal)",
+                reg_eu: "🇪🇺 Europe (Frankfurt / EU)",
+                reg_ua: "🇺🇦 Ukraine / Eastern Europe",
+                reg_us: "🇺🇸 USA (US-East)",
+                reg_asia: "🇸🇬 Asia (Singapore)",
+                btn_push: "🔔 Enable Push Notifications",
+                btn_theme: "🌗 Toggle Theme",
+                btn_mafia: "🕵️ Mafia Game",
+                title_change_pass: "Change Password",
+                ph_old_pass: "Current password",
+                ph_new_pass: "New password",
+                btn_save_pass: "Save New Password",
+                title_admin: "⚙️ Admin Dashboard",
+                desc_admin: "System User Management:",
+                mafia_choose: "Select an available game room:",
+                btn_back: "← Back",
+                mafia_role: "My Role:",
+                btn_take_seat: "Take Seat",
+                btn_leave_seat: "Leave Seat",
+                btn_start_game: "Start Game",
+                title_logs: "Game Logs:",
+                btn_lang: "🌐 Language / Язык: EN",
+                saved_chat: "Saved Messages"
+            }
+        };
+
+        function changeRegion(reg) {
+            currentRegion = reg;
+            localStorage.setItem('pychat_region', reg);
+        }
+
+        function toggleLanguage() {
+            currentLang = (currentLang === 'ru') ? 'en' : 'ru';
+            localStorage.setItem('pychat_lang', currentLang);
+            if (currentUser) {
+                socket.emit('change_language', { user: currentUser, language: currentLang });
+            }
+            applyLanguage(currentLang);
+        }
+
+        function applyLanguage(lang) {
+            currentLang = lang;
+            const dict = i18n[lang] || i18n['ru'];
+
+            document.querySelectorAll('[data-i18n]').forEach(el => {
+                const key = el.getAttribute('data-i18n');
+                if (dict[key]) el.innerText = dict[key];
+            });
+
+            document.querySelectorAll('[data-i18n-ph]').forEach(el => {
+                const key = el.getAttribute('data-i18n-ph');
+                if (dict[key]) el.placeholder = dict[key];
+            });
+
+            const langBtn = document.getElementById('langToggleBtn');
+            if (langBtn) langBtn.innerText = dict.btn_lang;
+
+            if (currentUser) socket.emit('get_users');
+        }
+
         const socket = io({
             reconnection: true,
             reconnectionAttempts: Infinity,
@@ -464,11 +701,10 @@
         let micAnimFrame = null;
         let peerConnections = {};
 
-        // ЗВОНКИ: ПЕРСОНАЛЬНЫЕ И ГРУППОВЫЕ КОМНАТЫ И ПЕРЕКЛЮЧЕНИЕ КАМЕР
         let groupLocalStream = null;
         let isGroupMicOn = true;
         let isGroupCamOn = true;
-        let currentFacingMode = 'user'; // 'user' (фронтальная) или 'environment' (задняя)
+        let currentFacingMode = 'user';
         const groupPeerConnections = {};
         let activeCallRoomId = "general-room";
 
@@ -489,6 +725,7 @@
         let activeCallPeer = null;
         let directCallStream = null;
         let incomingCallData = null;
+        let isVideoCallMode = false;
 
         const VAPID_PUBLIC_KEY = "{{ vapid_public_key }}";
 
@@ -571,7 +808,7 @@
 
         function urlBase64ToUint8Array(base64String) {
             const padding = '='.repeat((4 - base64String.length % 4) % 4);
-            const base64 = (base64String + padding).replace(/\\-/g, '+').replace(/_/g, '/');
+            const base64 = (base64String + padding).replace(/\-/g, '+').replace(/_/g, '/');
             const rawData = window.atob(base64);
             const outputArray = new Uint8Array(rawData.length);
             for (let i = 0; i < rawData.length; ++i) {
@@ -660,12 +897,14 @@
             vid.src = src;
             vid.style.display = 'block';
             document.getElementById('lightbox').style.display = 'flex';
+            vid.play().catch(() => {});
         }
 
         function closeLightbox() {
             document.getElementById('lightbox').style.display = 'none';
             const vid = document.getElementById('lightbox-video');
             vid.pause();
+            vid.removeAttribute('src');
         }
 
         function getAvatarColor(name) {
@@ -687,6 +926,9 @@
         }
 
         window.addEventListener('DOMContentLoaded', () => {
+            const regSel = document.getElementById('regionSelect');
+            if (regSel) regSel.value = currentRegion;
+            applyLanguage(currentLang);
             const savedUser = localStorage.getItem('pychat_user');
             const savedPass = localStorage.getItem('pychat_pass');
             if (savedUser && savedPass) socket.emit('login', { username: savedUser, password: savedPass });
@@ -716,6 +958,12 @@
                 document.getElementById('app-screen').style.display = 'flex';
                 document.getElementById('user-display').innerText = currentUser;
 
+                if (data.language) {
+                    currentLang = data.language;
+                    localStorage.setItem('pychat_lang', currentLang);
+                }
+                applyLanguage(currentLang);
+
                 if (userRole === 'admin' || currentUser === 'totr') {
                     document.getElementById('admin-btn').style.display = 'inline-block';
                 } else {
@@ -731,6 +979,14 @@
                 switchChat('#general');
             } else {
                 document.getElementById('status').innerText = data.message;
+            }
+        });
+
+        socket.on('language_changed', (data) => {
+            if (data.language) {
+                currentLang = data.language;
+                localStorage.setItem('pychat_lang', currentLang);
+                applyLanguage(currentLang);
             }
         });
 
@@ -782,8 +1038,10 @@
             currentTarget = target;
             unreadCounts[target] = 0;
             const isGroup = target.startsWith('#');
-            document.getElementById('chat-title').innerText = isGroup ? target : (target === currentUser ? '📁 Избранное' : '@' + target);
+            const savedTitle = (i18n[currentLang] && i18n[currentLang].saved_chat) ? i18n[currentLang].saved_chat : 'Избранное';
+            document.getElementById('chat-title').innerText = isGroup ? target : (target === currentUser ? '📁 ' + savedTitle : '@' + target);
             document.getElementById('call-btn').style.display = (!isGroup && target !== currentUser) ? 'inline-block' : 'none';
+            document.getElementById('group-call-btn').style.display = (target !== currentUser) ? 'inline-flex' : 'none';
             document.getElementById('messages').innerHTML = '';
             closeSidebar();
             socket.emit('load_history', { user: currentUser, target: currentTarget });
@@ -850,9 +1108,10 @@
             const list = document.getElementById('users-list');
             list.innerHTML = '';
             
+            const savedTitle = (i18n[currentLang] && i18n[currentLang].saved_chat) ? i18n[currentLang].saved_chat : 'Избранное';
             const savedDiv = document.createElement('div');
             savedDiv.className = 'chat-item' + (currentTarget === currentUser ? ' active' : '');
-            savedDiv.innerHTML = `<div class="avatar" style="background:#3B8ED0;">📁</div><span>Избранное</span>`;
+            savedDiv.innerHTML = `<div class="avatar" style="background:#3B8ED0;">📁</div><span>${savedTitle}</span>`;
             savedDiv.onclick = () => switchChat(currentUser);
             list.appendChild(savedDiv);
 
@@ -863,7 +1122,7 @@
                 if (u.username === currentUser) return;
 
                 if (u.username === currentTarget) {
-                    const statusText = u.online ? '🟢 В сети' : 'Был(а) в сети: ' + (u.last_seen ? new Date(u.last_seen * 1000).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : 'недавно');
+                    const statusText = u.online ? (currentLang === 'en' ? '🟢 Online' : '🟢 В сети') : ((currentLang === 'en' ? 'Last seen: ' : 'Был(а) в сети: ') + (u.last_seen ? new Date(u.last_seen * 1000).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : 'recently'));
                     document.getElementById('user-last-seen').innerText = statusText;
                 }
 
@@ -936,10 +1195,10 @@
                 row.innerHTML = `
                     <div><b>${u.username}</b> <span style="font-size:11px; color:#aaa;">(${u.role})</span></div>
                     <div style="display:flex; gap:6px;">
-                        <button onclick="adminSetRole('${u.username}', '${u.role === 'admin' ? 'user' : 'admin'}')" style="width:auto; padding:4px 8px; font-size:11px; background:#1F6AA5;">
+                        <button onclick="adminSetRole('${u.username}', '${u.role === 'admin' ? 'user' : 'admin'}')" style="width:auto; padding:4px 8px; font-size:11px; background:#1F6AA5; margin:0;">
                             ${u.role === 'admin' ? 'User' : 'Admin'}
                         </button>
-                        ${u.username !== currentUser ? `<button onclick="adminDeleteUser('${u.username}')" style="width:auto; padding:4px 8px; font-size:11px; background:#d32f2f;">Удалить</button>` : ''}
+                        ${u.username !== currentUser ? `<button onclick="adminDeleteUser('${u.username}')" style="width:auto; padding:4px 8px; font-size:11px; background:#d32f2f; margin:0;">Удалить</button>` : ''}
                     </div>
                 `;
                 container.appendChild(row);
@@ -973,7 +1232,7 @@
         socket.on('display_typing', (data) => {
             if (data.target === currentTarget || data.sender === currentTarget) {
                 const ind = document.getElementById('typing-indicator');
-                ind.innerText = data.sender + ' печатает...';
+                ind.innerText = data.sender + (currentLang === 'en' ? ' is typing...' : ' печатает...');
                 clearTimeout(typingTimeout);
                 typingTimeout = setTimeout(() => { ind.innerText = ''; }, 3000);
             }
@@ -1057,24 +1316,59 @@
             reader.readAsDataURL(file);
         }
 
+        function getSupportedAudioMime() {
+            const types = ['audio/mp4', 'audio/webm;codecs=opus', 'audio/webm', 'audio/ogg'];
+            for (const t of types) {
+                if (window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(t)) return t;
+            }
+            return '';
+        }
+
+        function getSupportedVideoMime() {
+            const types = ['video/mp4', 'video/mp4;codecs=h264,aac', 'video/webm;codecs=vp8,opus', 'video/webm'];
+            for (const t of types) {
+                if (window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(t)) return t;
+            }
+            return '';
+        }
+
+        function base64ToBlobUrl(b64Data, mimeType) {
+            try {
+                const byteChars = atob(b64Data);
+                const byteNumbers = new Array(byteChars.length);
+                for (let i = 0; i < byteChars.length; i++) {
+                    byteNumbers[i] = byteChars.charCodeAt(i);
+                }
+                const byteArray = new Uint8Array(byteNumbers);
+                const blob = new Blob([byteArray], { type: mimeType });
+                return URL.createObjectURL(blob);
+            } catch (e) {
+                return `data:${mimeType};base64,${b64Data}`;
+            }
+        }
+
         async function toggleVoiceRecord() {
             const btn = document.getElementById('voice-record-btn');
             if (!isRecording) {
                 try {
                     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                    mediaRecorder = new MediaRecorder(stream);
+                    const mimeType = getSupportedAudioMime();
+                    mediaRecorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
                     audioChunks = [];
-                    mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+                    mediaRecorder.ondataavailable = e => { if (e.data && e.data.size > 0) audioChunks.push(e.data); };
                     mediaRecorder.onstop = () => {
-                        const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                        const actualMime = mediaRecorder.mimeType || mimeType || 'audio/mp4';
+                        const audioBlob = new Blob(audioChunks, { type: actualMime });
                         const reader = new FileReader();
                         reader.onloadend = () => {
+                            const b64 = reader.result.split(',')[1];
                             socket.emit('send_msg', {
                                 sender: currentUser, target: currentTarget,
-                                msg: reader.result.split(',')[1], msg_type: 'voice'
+                                msg: JSON.stringify({ data: b64, mime: actualMime }), msg_type: 'voice'
                             });
                         };
                         reader.readAsDataURL(audioBlob);
+                        stream.getTracks().forEach(t => t.stop());
                     };
                     mediaRecorder.start();
                     isRecording = true;
@@ -1091,17 +1385,23 @@
             const btn = document.getElementById('video-record-btn');
             if (!isVideoRecording) {
                 try {
-                    const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 300, height: 300 }, audio: true });
-                    videoRecorder = new MediaRecorder(stream);
+                    const stream = await navigator.mediaDevices.getUserMedia({
+                        video: { facingMode: 'user', width: { ideal: 360 }, height: { ideal: 360 } },
+                        audio: true
+                    });
+                    const mimeType = getSupportedVideoMime();
+                    videoRecorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
                     videoChunks = [];
-                    videoRecorder.ondataavailable = e => videoChunks.push(e.data);
+                    videoRecorder.ondataavailable = e => { if (e.data && e.data.size > 0) videoChunks.push(e.data); };
                     videoRecorder.onstop = () => {
-                        const videoBlob = new Blob(videoChunks, { type: 'video/webm' });
+                        const actualMime = videoRecorder.mimeType || mimeType || 'video/mp4';
+                        const videoBlob = new Blob(videoChunks, { type: actualMime });
                         const reader = new FileReader();
                         reader.onloadend = () => {
+                            const b64 = reader.result.split(',')[1];
                             socket.emit('send_msg', {
                                 sender: currentUser, target: currentTarget,
-                                msg: reader.result.split(',')[1], msg_type: 'video_note'
+                                msg: JSON.stringify({ data: b64, mime: actualMime }), msg_type: 'video_note'
                             });
                         };
                         reader.readAsDataURL(videoBlob);
@@ -1123,14 +1423,14 @@
                 playNotificationSound();
 
                 let displayContent = data.msg;
-                if (data.msg_type === 'voice') displayContent = '🎤 Голосовое сообщение';
-                else if (data.msg_type === 'video_note') displayContent = '📹 Видео-сообщение';
-                else if (data.msg_type === 'sticker') displayContent = '🎨 Стикер';
+                if (data.msg_type === 'voice') displayContent = '🎤 Voice Message';
+                else if (data.msg_type === 'video_note') displayContent = '📹 Video Note';
+                else if (data.msg_type === 'sticker') displayContent = '🎨 Sticker';
                 else if (data.msg_type === 'file') {
                     try {
                         const fInfo = JSON.parse(data.msg);
-                        displayContent = '📁 Файл: ' + (fInfo.name || 'вложение');
-                    } catch(e) { displayContent = '📁 Файл'; }
+                        displayContent = '📁 File: ' + (fInfo.name || 'attachment');
+                    } catch(e) { displayContent = '📁 File'; }
                 }
 
                 triggerSystemNotification(data.sender, displayContent);
@@ -1168,20 +1468,33 @@
                     box.appendChild(div);
                 }
                 const isIncoming = msg.target === currentUser;
+                const isVid = msg.isVideo === true;
+                const iconCall = isVid ? '📹' : '📞';
+                const incTitle = isVid
+                    ? (currentLang === 'en' ? 'Incoming video call from @' : 'Входящий видеозвонок от @')
+                    : (currentLang === 'en' ? 'Incoming call from @' : 'Входящий звонок от @');
+                const outTitle = isVid
+                    ? (currentLang === 'en' ? 'Outgoing video call to @' : 'Исходящий видеозвонок для @')
+                    : (currentLang === 'en' ? 'Outgoing call to @' : 'Исходящий звонок для @');
+                const incSub = currentLang === 'en' ? 'Calling...' : 'Вам звонят...';
+                const outSub = currentLang === 'en' ? 'Waiting...' : 'Ожидание ответа...';
+                const btnAcceptTxt = i18n[currentLang]?.btn_accept || 'Принять';
+                const btnDeclineTxt = i18n[currentLang]?.btn_decline || 'Сбросить';
+
                 div.innerHTML = `
-                    <div style="font-size: 24px; margin-bottom: 5px;">📞</div>
+                    <div style="font-size: 24px; margin-bottom: 5px;">${iconCall}</div>
                     <div style="font-weight: bold; font-size: 14px; margin-bottom: 4px;">
-                        ${isIncoming ? 'Входящий звонок от @' + msg.sender : 'Исходящий звонок для @' + msg.target}
+                        ${isIncoming ? incTitle + msg.sender : outTitle + msg.target}
                     </div>
-                    <div style="font-size: 12px; color: #aaa;">${isIncoming ? 'Вам звонят...' : 'Ожидание ответа...'}</div>
+                    <div style="font-size: 12px; color: #aaa;">${isIncoming ? incSub : outSub}</div>
                     ${isIncoming ? `
                         <div class="call-card-btns">
-                            <button style="background: #2e7d32;" onclick="acceptCallFromCard('${msg.sender}', '${msg.roomId || ''}')">Принять</button>
-                            <button style="background: #c62828;" onclick="endCall()">Отклонить</button>
+                            <button style="background: #2e7d32;" onclick="acceptCallFromCard('${msg.sender}', '${msg.roomId || ''}', ${isVid})">${btnAcceptTxt}</button>
+                            <button style="background: #c62828;" onclick="endCall()">${btnDeclineTxt}</button>
                         </div>
                     ` : `
                         <div class="call-card-btns">
-                            <button style="background: #c62828;" onclick="endCall()">Сбросить</button>
+                            <button style="background: #c62828;" onclick="endCall()">${btnDeclineTxt}</button>
                         </div>
                     `}
                 `;
@@ -1211,15 +1524,32 @@
                     }
                 } catch(e) {}
             } else if (msg.msg_type === 'voice') {
-                contentHtml = `<audio controls playsinline src="data:audio/webm;base64,${msg.msg}" style="height:32px; width:170px;"></audio>`;
+                let rawB64 = msg.msg;
+                let mime = 'audio/mp4';
+                try {
+                    const parsed = JSON.parse(msg.msg);
+                    if (parsed && parsed.data) { rawB64 = parsed.data; mime = parsed.mime || 'audio/mp4'; }
+                } catch(e) { mime = 'audio/webm'; }
+                const blobUrl = base64ToBlobUrl(rawB64, mime);
+                contentHtml = `<audio controls playsinline preload="metadata" src="${blobUrl}" style="height:34px; width:180px;"></audio>`;
             } else if (msg.msg_type === 'video_note') {
-                contentHtml = `<video class="video-note" controls playsinline src="data:video/webm;base64,${msg.msg}" onclick="openVideoLightbox(this.src)"></video>`;
+                let rawB64 = msg.msg;
+                let mime = 'video/mp4';
+                try {
+                    const parsed = JSON.parse(msg.msg);
+                    if (parsed && parsed.data) { rawB64 = parsed.data; mime = parsed.mime || 'video/mp4'; }
+                } catch(e) { mime = 'video/webm'; }
+                const blobUrl = base64ToBlobUrl(rawB64, mime);
+                contentHtml = `
+                    <div class="video-note-wrap">
+                        <video class="video-note" controls playsinline webkit-playsinline preload="metadata" muted src="${blobUrl}#t=0.001" onclick="event.stopPropagation(); openVideoLightbox('${blobUrl}')"></video>
+                    </div>`;
             } else if (msg.msg_type === 'sticker') {
                 contentHtml = `<img src="${msg.msg}" class="sticker-img">`;
             }
 
             let ttlBadge = msg.ttl > 0 ? `<span style="font-size:10px; color:#ff9800;"> 💣 (${msg.ttl}s)</span>` : '';
-            let editBadge = msg.is_edited ? `<span style="font-size:10px; opacity:0.7;"> (изм.)</span>` : '';
+            let editBadge = msg.is_edited ? `<span style="font-size:10px; opacity:0.7;"> (edited)</span>` : '';
             let readMark = isMe ? (msg.is_read ? '✓✓' : '✓') : '';
 
             let reactionsObj = {};
@@ -1235,6 +1565,8 @@
             const avatarUrl = userAvatarsMap[msg.sender];
             let msgAvStyle = (avatarUrl && avatarUrl.length > 10) ? `background-image:url('${avatarUrl}')` : `background-color:${getAvatarColor(msg.sender)}`;
 
+            const senderLabel = isMe ? (currentLang === 'en' ? 'You' : 'Вы') : msg.sender;
+
             div.innerHTML = `
                 <div class="msg-actions">
                     <button class="action-btn" onclick="setReplyMsg(${msg.id})">↩️</button>
@@ -1247,7 +1579,7 @@
                 ${replyHtml}
                 <div class="msg-header">
                     <span class="msg-avatar" style="${msgAvStyle}" onclick="openUserInfoModal('${msg.sender}')"></span>
-                    <span onclick="openUserInfoModal('${msg.sender}')" style="cursor:pointer;">${isMe ? 'Вы' : msg.sender}${ttlBadge}</span>
+                    <span onclick="openUserInfoModal('${msg.sender}')" style="cursor:pointer;">${senderLabel}${ttlBadge}</span>
                 </div>
                 ${contentHtml}${editBadge}
                 <div class="msg-status">${readMark}</div>
@@ -1268,7 +1600,7 @@
             const targetMsg = allLoadedMessages[id];
             if (targetMsg) {
                 activeReplyMsg = targetMsg;
-                document.getElementById('reply-text').innerText = 'Ответ для ' + targetMsg.sender + ': ' + targetMsg.msg;
+                document.getElementById('reply-text').innerText = (currentLang === 'en' ? 'Reply to ' : 'Ответ для ') + targetMsg.sender + ': ' + targetMsg.msg;
                 document.getElementById('reply-bar').style.display = 'flex';
             }
         }
@@ -1297,17 +1629,37 @@
             });
         }
 
-        // --- ДИНАМИЧЕСКИЕ ПЕРСОНАЛЬНЫЕ КОМНАТЫ И КНОПКА СМЕНЫ КАМЕРЫ ---
-
+        // --- ВИДЕОЗВОНОК (КАК ОБЫЧНЫЙ ЗВОНОК С ЭКРАНОМ ВЫЗОВА ДЛЯ 1-НА-1 И КОМНАТОЙ ДЛЯ КАНАЛОВ) ---
         async function startGroupCall() {
-            // Определяем уникальную комнату для открытого чата
+            if (currentTarget === currentUser) return;
+
             if (currentTarget.startsWith('#')) {
                 activeCallRoomId = "channel_call_" + currentTarget.replace('#', '');
-            } else {
-                const sortedPair = [currentUser, currentTarget].sort();
-                activeCallRoomId = "private_call_" + sortedPair[0] + "_" + sortedPair[1];
+                await enterVideoRoomScreen(activeCallRoomId);
+                return;
             }
 
+            const sortedPair = [currentUser, currentTarget].sort();
+            activeCallRoomId = "private_video_call_" + sortedPair[0] + "_" + sortedPair[1];
+            isVideoCallMode = true;
+
+            document.getElementById('call-modal').style.display = 'flex';
+            document.getElementById('call-user-name').innerText = '@' + currentTarget;
+            document.getElementById('call-status-text').innerText = currentLang === 'en' ? 'Video calling...' : 'Видеовызов собеседника...';
+            document.getElementById('accept-call-btn').style.display = 'none';
+            setAvatarElement(document.getElementById('call-user-avatar'), currentTarget);
+
+            socket.emit('call_start', {
+                caller: currentUser,
+                target: currentTarget,
+                roomId: activeCallRoomId,
+                isVideo: true
+            });
+        }
+
+        async function enterVideoRoomScreen(roomId) {
+            activeCallRoomId = roomId;
+            document.getElementById('call-modal').style.display = 'none';
             document.getElementById('group-call-screen').classList.remove('hidden');
             try {
                 groupLocalStream = await navigator.mediaDevices.getUserMedia({
@@ -1317,8 +1669,8 @@
                 document.getElementById('local-video').srcObject = groupLocalStream;
                 socket.emit('join_call', { roomId: activeCallRoomId });
             } catch (err) {
-                alert("Разрешите доступ к камере и микрофону в браузере!");
-                leaveGroupCall();
+                alert(currentLang === 'en' ? 'Allow camera and microphone access!' : 'Разрешите доступ к камере и микрофону в браузере!');
+                endCall();
             }
         }
 
@@ -1326,7 +1678,6 @@
             if (!groupLocalStream) return;
             currentFacingMode = (currentFacingMode === 'user') ? 'environment' : 'user';
             
-            // Останавливаем старый видео-трек
             const videoTrack = groupLocalStream.getVideoTracks()[0];
             if (videoTrack) videoTrack.stop();
 
@@ -1340,7 +1691,6 @@
                 groupLocalStream.addTrack(newVideoTrack);
                 document.getElementById('local-video').srcObject = groupLocalStream;
 
-                // Обновляем трек у всех активных пиров
                 Object.values(groupPeerConnections).forEach(pc => {
                     const sender = pc.getSenders().find(s => s.track && s.track.kind === 'video');
                     if (sender) sender.replaceTrack(newVideoTrack);
@@ -1357,7 +1707,7 @@
                 isGroupMicOn = !isGroupMicOn;
                 audioTrack.enabled = isGroupMicOn;
                 const btn = document.getElementById('btn-group-mic');
-                btn.innerText = isGroupMicOn ? '🎤 Микрофон: Вкл' : '🔇 Микрофон: Выкл';
+                btn.innerText = isGroupMicOn ? (currentLang === 'en' ? '🎤 Mic: ON' : '🎤 Микрофон: Вкл') : (currentLang === 'en' ? '🔇 Mic: OFF' : '🔇 Микрофон: Выкл');
                 btn.classList.toggle('off', !isGroupMicOn);
             }
         }
@@ -1369,7 +1719,7 @@
                 isGroupCamOn = !isGroupCamOn;
                 videoTrack.enabled = isGroupCamOn;
                 const btn = document.getElementById('btn-group-cam');
-                btn.innerText = isGroupCamOn ? '📷 Камера: Вкл' : '🚫 Камера: Выкл';
+                btn.innerText = isGroupCamOn ? (currentLang === 'en' ? '📷 Cam: ON' : '📷 Камера: Вкл') : (currentLang === 'en' ? '🚫 Cam: OFF' : '🚫 Камера: Выкл');
                 btn.classList.toggle('off', !isGroupCamOn);
             }
         }
@@ -1452,7 +1802,7 @@
 
                 const label = document.createElement('span');
                 label.className = 'user-label';
-                label.innerText = `Участник #${sid.slice(0, 4)}`;
+                label.innerText = `User #${sid.slice(0, 4)}`;
 
                 card.appendChild(video);
                 card.appendChild(label);
@@ -1470,16 +1820,16 @@
             if (card) card.remove();
         });
 
-        // --- ЛОГИКА 1-НА-1 ЗВОНКОВ ---
-
+        // --- ОБЫЧНЫЙ АУДИОЗВОНОК 1-НА-1 ---
         async function startDirectCall() {
             if (currentTarget.startsWith('#')) return;
             const sortedPair = [currentUser, currentTarget].sort();
             activeCallRoomId = "private_call_" + sortedPair[0] + "_" + sortedPair[1];
+            isVideoCallMode = false;
 
             document.getElementById('call-modal').style.display = 'flex';
             document.getElementById('call-user-name').innerText = '@' + currentTarget;
-            document.getElementById('call-status-text').innerText = 'Вызов собеседника...';
+            document.getElementById('call-status-text').innerText = currentLang === 'en' ? 'Calling user...' : 'Вызов собеседника...';
             document.getElementById('accept-call-btn').style.display = 'none';
             setAvatarElement(document.getElementById('call-user-avatar'), currentTarget);
 
@@ -1498,29 +1848,41 @@
 
                 const offer = await activeCallPeer.createOffer();
                 await activeCallPeer.setLocalDescription(offer);
-                socket.emit('call_start', { caller: currentUser, target: currentTarget, roomId: activeCallRoomId, offer: offer });
+                socket.emit('call_start', { caller: currentUser, target: currentTarget, roomId: activeCallRoomId, offer: offer, isVideo: false });
 
             } catch(e) { alert('Ошибка доступа к микрофону!'); endCall(); }
         }
 
         socket.on('incoming_call', (data) => {
             incomingCallData = data;
+            isVideoCallMode = Boolean(data.isVideo);
+            if (data.roomId) activeCallRoomId = data.roomId;
+
             document.getElementById('call-modal').style.display = 'flex';
             document.getElementById('call-user-name').innerText = '@' + data.caller;
-            document.getElementById('call-status-text').innerText = 'Входящий звонок...';
+            document.getElementById('call-status-text').innerText = isVideoCallMode
+                ? (currentLang === 'en' ? '📹 Incoming video call...' : '📹 Входящий видеозвонок...')
+                : (currentLang === 'en' ? '📞 Incoming call...' : '📞 Входящий звонок...');
             document.getElementById('accept-call-btn').style.display = 'inline-block';
             setAvatarElement(document.getElementById('call-user-avatar'), data.caller);
         });
 
-        function acceptCallFromCard(callerName, roomId) {
+        function acceptCallFromCard(callerName, roomId, isVid) {
             if (roomId) activeCallRoomId = roomId;
-            if (incomingCallData) acceptCall();
-            else switchChat(callerName);
+            if (typeof isVid === 'boolean') isVideoCallMode = isVid;
+            if (incomingCallData) {
+                acceptCall();
+            } else if (isVideoCallMode && roomId) {
+                socket.emit('call_accept', { target: callerName, isVideo: true, roomId: roomId });
+                enterVideoRoomScreen(roomId);
+            } else {
+                switchChat(callerName);
+            }
         }
 
         socket.on('call_failed', (data) => {
             if (data.reason === 'offline') {
-                document.getElementById('call-status-text').innerText = 'Пользователь не в сети. Оставлен пропущенный звонок.';
+                document.getElementById('call-status-text').innerText = currentLang === 'en' ? 'User offline. Missed call left.' : 'Пользователь не в сети. Оставлен пропущенный звонок.';
                 setTimeout(() => {
                     endCallLocal();
                 }, 2000);
@@ -1529,7 +1891,16 @@
 
         async function acceptCall() {
             document.getElementById('accept-call-btn').style.display = 'none';
-            document.getElementById('call-status-text').innerText = 'Разговор...';
+
+            if (isVideoCallMode || (incomingCallData && incomingCallData.isVideo)) {
+                const caller = incomingCallData ? incomingCallData.caller : currentTarget;
+                const room = (incomingCallData && incomingCallData.roomId) ? incomingCallData.roomId : activeCallRoomId;
+                socket.emit('call_accept', { target: caller, isVideo: true, roomId: room });
+                await enterVideoRoomScreen(room);
+                return;
+            }
+
+            document.getElementById('call-status-text').innerText = currentLang === 'en' ? 'Connected' : 'Разговор...';
             try {
                 directCallStream = await navigator.mediaDevices.getUserMedia({ audio: true });
                 activeCallPeer = new RTCPeerConnection(iceServers);
@@ -1546,14 +1917,19 @@
                 await activeCallPeer.setRemoteDescription(new RTCSessionDescription(incomingCallData.offer));
                 const answer = await activeCallPeer.createAnswer();
                 await activeCallPeer.setLocalDescription(answer);
-                socket.emit('call_accept', { target: incomingCallData.caller, answer: answer });
+                socket.emit('call_accept', { target: incomingCallData.caller, answer: answer, isVideo: false });
 
             } catch(e) { alert('Ошибка соединения!'); endCall(); }
         }
 
         socket.on('call_accepted', async (data) => {
-            document.getElementById('call-status-text').innerText = 'Разговор...';
-            if (activeCallPeer) await activeCallPeer.setRemoteDescription(new RTCSessionDescription(data.answer));
+            if (data.isVideo || isVideoCallMode) {
+                const room = data.roomId || activeCallRoomId;
+                await enterVideoRoomScreen(room);
+                return;
+            }
+            document.getElementById('call-status-text').innerText = currentLang === 'en' ? 'Connected' : 'Разговор...';
+            if (activeCallPeer && data.answer) await activeCallPeer.setRemoteDescription(new RTCSessionDescription(data.answer));
         });
 
         socket.on('call_signal', async (data) => {
@@ -1564,16 +1940,19 @@
 
         function endCall() {
             const target = incomingCallData ? incomingCallData.caller : currentTarget;
-            socket.emit('call_end', { target: target, caller: currentUser });
+            if (!target.startsWith('#')) {
+                socket.emit('call_end', { target: target, caller: currentUser });
+            }
             endCallLocal();
         }
 
         function endCallLocal() {
             if (directCallStream) directCallStream.getTracks().forEach(t => t.stop());
             if (activeCallPeer) activeCallPeer.close();
-            activeCallPeer = null; directCallStream = null; incomingCallData = null;
+            activeCallPeer = null; directCallStream = null; incomingCallData = null; isVideoCallMode = false;
             document.getElementById('call-modal').style.display = 'none';
             document.querySelectorAll('.call-card').forEach(c => c.remove());
+            leaveGroupCall();
         }
 
         function openMafiaModal() {
@@ -1586,7 +1965,7 @@
         function backToMafiaRooms() {
             if (activeRoomId) leaveActiveRoom();
             activeRoomId = null;
-            document.getElementById('mafia-modal-title').innerText = '🕵️ Лобби комнат «Мафии»';
+            document.getElementById('mafia-modal-title').innerText = '🕵️ ' + (currentLang === 'en' ? 'Mafia Game Rooms' : 'Лобби комнат «Мафии»');
             document.getElementById('mafia-rooms-screen').style.display = 'block';
             document.getElementById('mafia-gameplay-screen').style.display = 'none';
             socket.emit('mafia_get_rooms');
@@ -1605,7 +1984,7 @@
 
         function toggleRoleShow() {
             showRoleFlag = !showRoleFlag;
-            document.getElementById('my-role-text').innerText = showRoleFlag ? (mySecretRole || 'Нет роли') : 'Скрыта';
+            document.getElementById('my-role-text').innerText = showRoleFlag ? (mySecretRole || 'No Role') : (currentLang === 'en' ? 'Hidden' : 'Скрыта');
         }
 
         async function toggleMic() {
@@ -1614,11 +1993,11 @@
             if (isMicOn) {
                 try {
                     mediaStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
-                    btn.innerText = '🎙️ Микрофон ВКЛ'; btn.style.background = '#388e3c';
+                    btn.innerText = currentLang === 'en' ? '🎙️ Mic ON' : '🎙️ Микрофон ВКЛ'; btn.style.background = '#388e3c';
                     startMicMeter(mediaStream);
                     socket.emit('webrtc_join', { room_id: activeRoomId, user: currentUser });
                 } catch(err) { alert('Микрофон недоступен: ' + err); isMicOn = false; }
-            } else { stopMicMeter(); btn.innerText = '🔇 Микрофон ВЫКЛ'; btn.style.background = '#c62828'; }
+            } else { stopMicMeter(); btn.innerText = currentLang === 'en' ? '🔇 Mic OFF' : '🔇 Микрофон ВЫКЛ'; btn.style.background = '#c62828'; }
         }
 
         function startMicMeter(stream) {
@@ -1710,9 +2089,9 @@
                 item.innerHTML = `
                     <div>
                         <div class="room-title">${rdata.name}</div>
-                        <div class="room-info">Игроков: ${rdata.count}/6 | Статус: ${rdata.state.toUpperCase()}</div>
+                        <div class="room-info">${currentLang === 'en' ? 'Players' : 'Игроков'}: ${rdata.count}/6 | ${currentLang === 'en' ? 'Status' : 'Статус'}: ${rdata.state.toUpperCase()}</div>
                     </div>
-                    <button style="width:auto; padding:6px 14px;" onclick="enterMafiaRoom('${rid}')">Войти</button>
+                    <button style="width:auto; padding:6px 14px; margin:0;" onclick="enterMafiaRoom('${rid}')">${currentLang === 'en' ? 'Join' : 'Войти'}</button>
                 `;
                 container.appendChild(item);
             }
@@ -1751,8 +2130,8 @@
                     slotDiv.className = 'table-slot occupied';
                     let actBtn = '';
                     if (p.alive && p.name !== currentUser) {
-                        if (data.state === 'night' && mySecretRole === 'mafia') actBtn = `<button class="act-btn" onclick="socket.emit('mafia_action', {room_id:'${activeRoomId}', user:'${currentUser}', target:'${p.name}', action:'kill'})">Убить</button>`;
-                        if (data.state === 'day') actBtn = `<button class="act-btn" style="background:#f57c00;" onclick="socket.emit('mafia_action', {room_id:'${activeRoomId}', user:'${currentUser}', target:'${p.name}', action:'vote'})">Голос</button>`;
+                        if (data.state === 'night' && mySecretRole === 'mafia') actBtn = `<button class="act-btn" onclick="socket.emit('mafia_action', {room_id:'${activeRoomId}', user:'${currentUser}', target:'${p.name}', action:'kill'})">${currentLang === 'en' ? 'Kill' : 'Убить'}</button>`;
+                        if (data.state === 'day') actBtn = `<button class="act-btn" style="background:#f57c00;" onclick="socket.emit('mafia_action', {room_id:'${activeRoomId}', user:'${currentUser}', target:'${p.name}', action:'vote'})">${currentLang === 'en' ? 'Vote' : 'Голос'}</button>`;
                     }
                     const avElem = document.createElement('div');
                     avElem.className = 'slot-avatar';
@@ -1761,12 +2140,12 @@
                     slotDiv.innerHTML += `
                         <div class="slot-name">${p.name}</div>
                         <div class="audio-meter-box" id="meter-box-${p.name}"><div class="audio-meter-bar" id="meter-bar-${p.name}"></div></div>
-                        <div class="slot-status">${p.alive ? '🟢 Жив' : '💀 Убит'}</div>
+                        <div class="slot-status">${p.alive ? (currentLang === 'en' ? '🟢 Alive' : '🟢 Жив') : (currentLang === 'en' ? '💀 Dead' : '💀 Убит')}</div>
                         ${actBtn}
                     `;
                 } else {
                     slotDiv.className = 'table-slot';
-                    slotDiv.innerHTML = `<div class="slot-avatar" style="background:#333; color:#666;">+</div><div class="slot-name" style="color:#777;">Свободно</div>`;
+                    slotDiv.innerHTML = `<div class="slot-avatar" style="background:#333; color:#666;">+</div><div class="slot-name" style="color:#777;">${currentLang === 'en' ? 'Empty' : 'Свободно'}</div>`;
                 }
                 table.appendChild(slotDiv);
             }
