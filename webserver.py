@@ -555,11 +555,13 @@ def handle_leave_call(data):
 def on_call_start(data):
     caller = data.get('caller')
     target = data.get('target')
+    is_video = bool(data.get('isVideo', False))
     room_id = data.get('roomId', f"call_{min(caller, target)}_{max(caller, target)}")
     
+    push_title = f"📹 Входящий видеозвонок от {caller}" if is_video else f"📞 Входящий звонок от {caller}"
     send_web_push(
         target, 
-        f"📞 Входящий звонок от {caller}", 
+        push_title, 
         "Нажмите, чтобы ответить на звонок"
     )
 
@@ -567,13 +569,14 @@ def on_call_start(data):
         'caller': caller,
         'target': target,
         'roomId': room_id,
-        'offer': data.get('offer')
+        'offer': data.get('offer'),
+        'isVideo': is_video
     }
 
     if target not in online_users:
         conn, db_type = get_db()
         cur = conn.cursor()
-        msg_text = "📞 Пропущенный звонок"
+        msg_text = "📹 Пропущенный видеозвонок" if is_video else "📞 Пропущенный звонок"
         
         if db_type == 'postgres':
             cur.execute("INSERT INTO messages (sender, target, message, msg_type) VALUES (%s, %s, %s, 'text') RETURNING id", (caller, target, msg_text))
@@ -591,9 +594,10 @@ def on_call_start(data):
             'id': int(time.time() * 1000),
             'sender': caller,
             'target': target,
-            'msg': f"📞 Входящий звонок в комнату {room_id}...",
+            'msg': f"{'📹 Входящий видеозвонок' if is_video else '📞 Входящий звонок'} в комнату {room_id}...",
             'msg_type': 'call_card',
             'roomId': room_id,
+            'isVideo': is_video,
             'is_read': 0,
             'is_edited': 0
         }
@@ -601,10 +605,17 @@ def on_call_start(data):
         emit('new_msg', call_msg, room=caller)
         emit('incoming_call', call_payload, room=target)
 
+@socketio.on('call_signal')
+def on_call_signal(data):
+    target = data.get('target')
+    if target:
+        emit('call_signal', data, room=target)
+
 @socketio.on('call_accept')
 def on_call_accept(data):
     target = data.get('target')
-    emit('call_accepted', data, room=target)
+    if target:
+        emit('call_accepted', data, room=target)
 
 @socketio.on('call_end')
 def on_call_end(data):
