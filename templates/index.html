@@ -1308,10 +1308,31 @@
                 editingMsgId = null;
                 document.getElementById('send-btn').innerText = '➤';
             } else {
+                const tempId = 'temp_' + Date.now();
+                const replyToId = activeReplyMsg ? activeReplyMsg.id : null;
+                const replyTxt = activeReplyMsg ? activeReplyMsg.sender + ': ' + activeReplyMsg.msg : '';
+
+                appendMessage({
+                    id: tempId,
+                    sender: currentUser,
+                    target: currentTarget,
+                    msg: txt,
+                    msg_type: 'text',
+                    ttl: ttl,
+                    reply_to: replyToId,
+                    reply_text: replyTxt,
+                    is_read: 0,
+                    is_temp: true
+                });
+
                 socket.emit('send_msg', {
-                    sender: currentUser, target: currentTarget, msg: txt, msg_type: 'text', ttl: ttl,
-                    reply_to: activeReplyMsg ? activeReplyMsg.id : null,
-                    reply_text: activeReplyMsg ? activeReplyMsg.sender + ': ' + activeReplyMsg.msg : ''
+                    sender: currentUser,
+                    target: currentTarget,
+                    msg: txt,
+                    msg_type: 'text',
+                    ttl: ttl,
+                    reply_to: replyToId,
+                    reply_text: replyTxt
                 });
             }
             document.getElementById('msg-input').value = '';
@@ -1458,7 +1479,15 @@
         }
 
         socket.on('new_msg', (data) => {
-            if (data.sender !== currentUser) {
+            if (data.sender === currentUser) {
+                const tempElems = document.querySelectorAll('[id^="msg-elem-temp_"]');
+                for (let el of tempElems) {
+                    if (el.innerText.includes(data.msg)) {
+                        el.remove();
+                        break;
+                    }
+                }
+            } else {
                 playNotificationSound();
 
                 let displayContent = data.msg;
@@ -1494,7 +1523,9 @@
         });
 
         function appendMessage(msg) {
-            allLoadedMessages[msg.id] = msg;
+            if (!msg.is_temp) {
+                allLoadedMessages[msg.id] = msg;
+            }
             let div = document.getElementById('msg-elem-' + msg.id);
             const box = document.getElementById('messages');
             const isMe = msg.sender === currentUser;
@@ -1549,7 +1580,9 @@
                 box.appendChild(div);
             }
 
-            attachSwipeToMessage(div, msg.id);
+            if (!msg.is_temp) {
+                attachSwipeToMessage(div, msg.id);
+            }
 
             let replyHtml = msg.reply_text ? `<div class="reply-preview-box">${msg.reply_text}</div>` : '';
             let contentHtml = `<span>${msg.msg}</span>`;
@@ -1589,7 +1622,7 @@
 
             let ttlBadge = msg.ttl > 0 ? `<span style="font-size:10px; color:#ff9800;"> 💣 (${msg.ttl}s)</span>` : '';
             let editBadge = msg.is_edited ? `<span style="font-size:10px; opacity:0.7;"> (edited)</span>` : '';
-            let readMark = isMe ? (msg.is_read ? '✓✓' : '✓') : '';
+            let readMark = isMe ? (msg.is_temp ? '🕒' : (msg.is_read ? '✓✓' : '✓')) : '';
 
             let reactionsObj = {};
             try { reactionsObj = JSON.parse(msg.reactions || '{}'); } catch(e){}
@@ -1598,15 +1631,15 @@
                 if (users.length > 0) reactionsHtml += `<span class="reaction-item" onclick="addReaction(${msg.id}, '${emoji}')">${emoji} ${users.length}</span>`;
             }
 
-            let deleteBtn = (isMe || userRole === 'admin') ? `<button class="action-btn" onclick="deleteMessage(${msg.id})">🗑️</button>` : '';
-            let editBtn = isMe && msg.msg_type === 'text' ? `<button class="action-btn" onclick="startEditMsg(${msg.id})">✏️</button>` : '';
+            let deleteBtn = (!msg.is_temp && (isMe || userRole === 'admin')) ? `<button class="action-btn" onclick="deleteMessage(${msg.id})">🗑️</button>` : '';
+            let editBtn = (!msg.is_temp && isMe && msg.msg_type === 'text') ? `<button class="action-btn" onclick="startEditMsg(${msg.id})">✏️</button>` : '';
 
             const avatarUrl = userAvatarsMap[msg.sender];
             let msgAvStyle = (avatarUrl && avatarUrl.length > 10) ? `background-image:url('${avatarUrl}')` : `background-color:${getAvatarColor(msg.sender)}`;
 
             const senderLabel = isMe ? (currentLang === 'en' ? 'You' : 'Вы') : msg.sender;
 
-            div.innerHTML = `
+            let actionsHtml = msg.is_temp ? '' : `
                 <div class="msg-actions">
                     <button class="action-btn" onclick="setReplyMsg(${msg.id})">↩️</button>
                     <button class="action-btn" onclick="pinMsg(${msg.id})">📌</button>
@@ -1615,6 +1648,10 @@
                     ${editBtn}
                     ${deleteBtn}
                 </div>
+            `;
+
+            div.innerHTML = `
+                ${actionsHtml}
                 ${replyHtml}
                 <div class="msg-header">
                     <span class="msg-avatar" style="${msgAvStyle}" onclick="openUserInfoModal('${msg.sender}')"></span>
@@ -1632,7 +1669,7 @@
             });
 
             box.scrollTop = box.scrollHeight;
-            if (msg.ttl > 0) setTimeout(() => { deleteMessage(msg.id); }, msg.ttl * 1000);
+            if (!msg.is_temp && msg.ttl > 0) setTimeout(() => { deleteMessage(msg.id); }, msg.ttl * 1000);
         }
 
         function setReplyMsg(id) {
@@ -2194,6 +2231,15 @@
 
         function openProfileModal() { document.getElementById('profile-modal').style.display = 'flex'; }
         function closeProfileModal() { document.getElementById('profile-modal').style.display = 'none'; }
+
+        socket.on('connect', () => {
+            if (currentUser) {
+                socket.emit('get_users');
+                if (currentTarget) {
+                    socket.emit('load_history', { user: currentUser, target: currentTarget });
+                }
+            }
+        });
 
         socket.on('disconnect', (reason) => {
             if (reason === "io server disconnect" || reason === "transport close") {
