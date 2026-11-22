@@ -5,198 +5,237 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Спецзвязочок Ultra</title>
     <link rel="manifest" href="/manifest.json">
-    <meta name="theme-color" content="#1F6AA5">
+    <meta name="theme-color" content="#17212b">
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
     <style>
         :root {
-            --bg-color: #121212;
-            --panel-bg: #1e1e1e;
-            --panel-border: #2d2d2d;
-            --text-color: #ffffff;
-            --accent-color: #1F6AA5;
-            --item-hover: #2a2a2a;
+            --bg-color: #0e1621;
+            --sidebar-bg: #17212b;
+            --panel-bg: #17212b;
+            --panel-elevated: #242f3d;
+            --panel-border: #101923;
+            --text-color: #f5f5f5;
+            --text-muted: #7f91a4;
+            --accent-color: #2b5278;
+            --accent-bright: #3e99e8;
+            --msg-me-bg: #2b5278;
+            --msg-other-bg: #182533;
+            --item-hover: #202b36;
+            --item-active: #2b5278;
         }
 
         body.light-theme {
-            --bg-color: #f4f5f7;
+            --bg-color: #e6ebee;
+            --sidebar-bg: #ffffff;
             --panel-bg: #ffffff;
-            --panel-border: #e0e0e0;
-            --text-color: #111111;
-            --accent-color: #0078d4;
-            --item-hover: #eef2f5;
+            --panel-elevated: #f1f4f7;
+            --panel-border: #dce1e6;
+            --text-color: #000000;
+            --text-muted: #707579;
+            --accent-color: #3390ec;
+            --accent-bright: #3390ec;
+            --msg-me-bg: #eeffde;
+            --msg-other-bg: #ffffff;
+            --item-hover: #f4f4f5;
+            --item-active: #3390ec;
         }
 
-        * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-        html, body { width: 100vw; height: 100dvh; overflow: hidden; background: var(--bg-color); color: var(--text-color); position: fixed; top: 0; left: 0; transition: background 0.3s, color 0.3s; touch-action: manipulation; }
-        
-        #auth-screen { display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100dvh; padding: 20px; }
-        .auth-box { background: var(--panel-bg); padding: 25px; border-radius: 16px; width: 100%; max-width: 340px; text-align: center; border: 1px solid var(--panel-border); }
-        .auth-box h2 { margin-bottom: 15px; color: #3B8ED0; }
-        input[type="text"], input[type="password"] { width: 100%; padding: 12px; margin: 8px 0; border-radius: 10px; border: 1px solid var(--panel-border); background: var(--bg-color); color: var(--text-color); outline: none; font-size: 16px; }
-        button { width: 100%; padding: 12px; margin-top: 10px; border-radius: 10px; border: none; background: var(--accent-color); color: #fff; font-weight: bold; cursor: pointer; font-size: 15px; }
-        
+        body.light-theme .msg-me { color: #000000; }
+        body.light-theme .msg-me .msg-header { color: #3390ec; }
+        body.light-theme .msg-me .msg-status { color: #4fae4e; }
+        body.light-theme .chat-item.active { color: #ffffff; }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+        html, body { width: 100vw; height: 100dvh; overflow: hidden; background: var(--bg-color); color: var(--text-color); position: fixed; top: 0; left: 0; transition: background 0.25s, color 0.25s; touch-action: manipulation; }
+
+        ::-webkit-scrollbar { width: 5px; height: 5px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: rgba(127, 145, 164, 0.25); border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(127, 145, 164, 0.45); }
+
+        @keyframes msgPop {
+            from { opacity: 0; transform: translateY(6px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        #auth-screen { display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100dvh; padding: 20px; background: var(--bg-color); }
+        .auth-box { background: var(--panel-bg); padding: 28px 24px; border-radius: 18px; width: 100%; max-width: 340px; text-align: center; border: 1px solid var(--panel-border); box-shadow: 0 12px 35px rgba(0, 0, 0, 0.35); }
+        .auth-box h2 { margin-bottom: 18px; color: var(--accent-bright); font-size: 22px; font-weight: 700; }
+        input[type="text"], input[type="password"] { width: 100%; padding: 12px 14px; margin: 7px 0; border-radius: 12px; border: 1px solid var(--panel-border); background: var(--panel-elevated); color: var(--text-color); outline: none; font-size: 15px; transition: border-color 0.2s; }
+        input[type="text"]:focus, input[type="password"]:focus { border-color: var(--accent-bright); }
+        button { width: 100%; padding: 12px; margin-top: 10px; border-radius: 12px; border: none; background: var(--accent-bright); color: #fff; font-weight: 600; cursor: pointer; font-size: 15px; transition: transform 0.1s, opacity 0.2s; }
+        button:active { transform: scale(0.98); }
+
         #app-screen { display: none; height: 100dvh; width: 100vw; position: relative; overflow: hidden; }
-        
-        #sidebar-overlay { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100dvh; background: rgba(0,0,0,0.6); z-index: 9; }
+
+        #sidebar-overlay { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100dvh; background: rgba(0, 0, 0, 0.55); z-index: 9; }
         #sidebar-overlay.active { display: block; }
 
-        #sidebar { width: 280px; background: var(--panel-bg); border-right: 2px solid var(--panel-border); display: flex; flex-direction: column; flex-shrink: 0; z-index: 10; height: 100dvh; transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1); }
-        .sidebar-header { padding: 12px 15px; background: var(--panel-bg); border-bottom: 1px solid var(--panel-border); font-weight: bold; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
-        .chat-list { flex: 1; overflow-y: auto; padding: 10px; }
-        .section-title { font-size: 11px; text-transform: uppercase; color: #888; margin: 12px 8px 6px 8px; font-weight: bold; display: flex; justify-content: space-between; align-items: center; }
-        
-        .chat-item { padding: 10px 12px; border-radius: 8px; cursor: pointer; margin-bottom: 4px; display: flex; align-items: center; gap: 10px; font-size: 14px; background: transparent; transition: background 0.2s; position: relative; }
-        .chat-item:hover, .chat-item.active { background: var(--item-hover); }
-        .chat-item.pinned-chat { border-left: 3px solid #3B8ED0; }
-        
-        .unread-badge { background: #e53935; color: #fff; font-size: 11px; font-weight: bold; border-radius: 10px; padding: 2px 7px; margin-left: auto; }
+        #sidebar { width: 280px; background: var(--sidebar-bg); border-right: 1px solid var(--panel-border); display: flex; flex-direction: column; flex-shrink: 0; z-index: 10; height: 100dvh; transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1); }
+        .sidebar-header { padding: 12px 14px; background: var(--sidebar-bg); border-bottom: 1px solid var(--panel-border); font-weight: 600; display: flex; justify-content: space-between; align-items: center; gap: 8px; height: 56px; }
+        .chat-list { flex: 1; overflow-y: auto; padding: 8px; }
+        .section-title { font-size: 11px; text-transform: uppercase; color: var(--text-muted); margin: 12px 8px 6px 8px; font-weight: 700; letter-spacing: 0.4px; display: flex; justify-content: space-between; align-items: center; }
 
-        .avatar { width: 34px; height: 34px; border-radius: 50%; background: #3B8ED0; display: flex; align-items: center; justify-content: center; font-weight: bold; color: #fff; font-size: 14px; flex-shrink: 0; background-size: cover; background-position: center; cursor: pointer; }
+        .chat-item { padding: 9px 12px; border-radius: 12px; cursor: pointer; margin-bottom: 3px; display: flex; align-items: center; gap: 10px; font-size: 14px; font-weight: 500; background: transparent; transition: background 0.15s; position: relative; }
+        .chat-item:hover { background: var(--item-hover); }
+        .chat-item.active { background: var(--item-active); color: #fff; }
+        .chat-item.pinned-chat { border-left: 3px solid var(--accent-bright); }
+
+        .unread-badge { background: var(--accent-bright); color: #fff; font-size: 11px; font-weight: 700; border-radius: 12px; padding: 2px 7px; margin-left: auto; }
+
+        .avatar { width: 36px; height: 36px; border-radius: 50%; background: var(--accent-bright); display: flex; align-items: center; justify-content: center; font-weight: 700; color: #fff; font-size: 14px; flex-shrink: 0; background-size: cover; background-position: center; cursor: pointer; }
         .status-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-left: 4px; }
-        .online { background: #4caf50; } .offline { background: #757575; }
+        .online { background: #4dcd5e; box-shadow: 0 0 6px rgba(77, 205, 94, 0.5); } .offline { background: #6c7883; }
 
         #chat-main { flex: 1; display: flex; flex-direction: column; background: var(--bg-color); min-width: 0; height: 100dvh; position: relative; }
-        header { height: 56px; background: var(--panel-bg); padding: 0 12px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--panel-border); flex-shrink: 0; width: 100%; }
-        .header-left { display: flex; align-items: center; gap: 8px; }
-        .toggle-btn { width: 36px; height: 36px; margin: 0; background: var(--item-hover); border: 1px solid var(--panel-border); font-size: 18px; border-radius: 8px; color: var(--text-color); cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+        header { height: 56px; background: var(--panel-bg); padding: 0 14px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--panel-border); flex-shrink: 0; width: 100%; }
+        .header-left { display: flex; align-items: center; gap: 10px; }
+        .toggle-btn { width: 36px; height: 36px; margin: 0; background: var(--panel-elevated); border: none; font-size: 18px; border-radius: 10px; color: var(--text-color); cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
 
-        #pinned-bar { display: none; background: var(--item-hover); padding: 6px 15px; border-bottom: 1px solid var(--panel-border); font-size: 13px; color: #3B8ED0; justify-content: space-between; align-items: center; }
+        #pinned-bar { display: none; background: var(--panel-bg); padding: 7px 15px; border-bottom: 1px solid var(--panel-border); font-size: 13px; color: var(--accent-bright); justify-content: space-between; align-items: center; }
 
         .search-bar { padding: 6px 12px; background: var(--panel-bg); border-bottom: 1px solid var(--panel-border); display: flex; gap: 8px; }
-        .search-bar input { margin: 0; padding: 6px 10px; font-size: 13px; height: 32px; border-radius: 6px; width: 100%; }
+        .search-bar input { margin: 0; padding: 6px 12px; font-size: 13px; height: 32px; border-radius: 16px; width: 100%; background: var(--panel-elevated); border: none; }
 
-        .chat-container { flex: 1; overflow-y: auto; padding: 15px 12px 75px 12px; display: flex; flex-direction: column; gap: 10px; -webkit-overflow-scrolling: touch; }
-        
-        .message { max-width: 85%; padding: 8px 12px; border-radius: 12px; font-size: 14px; position: relative; display: flex; flex-direction: column; gap: 3px; word-wrap: break-word; user-select: text; margin-top: 4px; transition: transform 0.15s ease-out; touch-action: pan-y; }
-        .msg-me { background: var(--accent-color); color: #fff; align-self: flex-end; border-bottom-right-radius: 2px; }
-        .msg-other { background: var(--panel-bg); border: 1px solid var(--panel-border); align-self: flex-start; border-bottom-left-radius: 2px; }
-        .msg-header { display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: bold; color: #82b1ff; }
-        .msg-me .msg-header { justify-content: flex-end; color: #e0e0e0; }
+        .chat-container { flex: 1; overflow-y: auto; padding: 14px 14px 76px 14px; display: flex; flex-direction: column; gap: 8px; -webkit-overflow-scrolling: touch; }
+
+        .message { max-width: 82%; padding: 9px 13px; border-radius: 16px; font-size: 14.5px; line-height: 1.4; position: relative; display: flex; flex-direction: column; gap: 3px; word-wrap: break-word; user-select: text; margin-top: 2px; transition: transform 0.15s ease-out; touch-action: pan-y; animation: msgPop 0.18s ease-out; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25); }
+        .msg-me { background: var(--msg-me-bg); color: #fff; align-self: flex-end; border-bottom-right-radius: 4px; }
+        .msg-other { background: var(--msg-other-bg); align-self: flex-start; border-bottom-left-radius: 4px; }
+        .msg-header { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: #64b5f6; }
+        .msg-me .msg-header { justify-content: flex-end; color: #90caf9; }
         .msg-avatar { width: 18px; height: 18px; border-radius: 50%; background-size: cover; background-position: center; display: inline-block; cursor: pointer; }
 
-        .call-card { background: var(--panel-bg); border: 1px solid #3B8ED0; border-radius: 12px; padding: 12px; width: 100%; max-width: 280px; align-self: center; margin: 10px 0; text-align: center; }
+        .call-card { background: var(--panel-bg); border: 1px solid var(--accent-bright); border-radius: 16px; padding: 14px; width: 100%; max-width: 280px; align-self: center; margin: 10px 0; text-align: center; box-shadow: 0 4px 15px rgba(0,0,0,0.3); }
         .call-card-btns { display: flex; gap: 10px; margin-top: 10px; justify-content: center; }
-        .call-card-btns button { width: auto; padding: 6px 16px; font-size: 13px; margin: 0; }
+        .call-card-btns button { width: auto; padding: 7px 16px; font-size: 13px; margin: 0; border-radius: 10px; }
 
-        .video-note-wrap { position: relative; width: 170px; height: 170px; border-radius: 12px; overflow: hidden; border: 2px solid var(--panel-border); background: #000; }
+        .video-note-wrap { position: relative; width: 175px; height: 175px; border-radius: 16px; overflow: hidden; border: 2px solid var(--panel-elevated); background: #000; }
         .video-note { width: 100%; height: 100%; object-fit: cover; display: block; background: #000; cursor: pointer; }
 
-        .msg-status { font-size: 10px; align-self: flex-end; margin-top: 2px; opacity: 0.8; }
-        .msg-me .msg-status { color: #bbdefb; }
-        .msg-other .msg-status { color: #888; }
+        .msg-status { font-size: 11px; align-self: flex-end; margin-top: 1px; opacity: 0.85; }
+        .msg-me .msg-status { color: #7cc4fa; }
+        .msg-other .msg-status { color: var(--text-muted); }
 
-        .msg-actions { display: none; position: absolute; top: -26px; right: 0; background: var(--panel-bg); border-radius: 12px; padding: 3px 8px; gap: 6px; border: 1px solid var(--panel-border); z-index: 50; box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
+        .msg-actions { display: none; position: absolute; top: -28px; right: 0; background: var(--panel-elevated); border-radius: 12px; padding: 3px 8px; gap: 6px; border: 1px solid var(--panel-border); z-index: 50; box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
         .message:hover .msg-actions, .message:focus .msg-actions, .message.active-touch .msg-actions { display: flex; }
         .action-btn { cursor: pointer; font-size: 13px; padding: 2px 4px; color: var(--text-color); border: none; background: transparent; margin: 0; width: auto; }
         .action-btn:hover { transform: scale(1.2); }
 
         .reactions-list { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 4px; }
-        .reaction-item { background: rgba(0,0,0,0.2); border-radius: 10px; padding: 2px 6px; font-size: 11px; border: 1px solid var(--panel-border); cursor: pointer; }
+        .reaction-item { background: rgba(62, 153, 232, 0.18); border-radius: 12px; padding: 2px 8px; font-size: 11.5px; cursor: pointer; }
 
-        .reply-preview-box { background: rgba(0,0,0,0.2); border-left: 3px solid #3B8ED0; padding: 4px 8px; border-radius: 4px; font-size: 12px; color: #aaa; margin-bottom: 4px; }
-        
-        #reply-bar { display: none; background: var(--panel-bg); padding: 4px 10px; border-top: 1px solid var(--panel-border); justify-content: space-between; align-items: center; font-size: 12px; color: #3B8ED0; }
-        
-        footer { 
-            position: absolute; 
-            bottom: 0; 
-            left: 0; 
-            right: 0; 
-            height: 54px; 
-            background: var(--panel-bg); 
-            padding: 0 10px; 
-            display: flex; 
-            gap: 6px; 
-            border-top: 1px solid var(--panel-border); 
-            align-items: center; 
+        .reply-preview-box { background: rgba(62, 153, 232, 0.14); border-left: 3px solid var(--accent-bright); padding: 4px 8px; border-radius: 6px; font-size: 12px; color: var(--text-muted); margin-bottom: 4px; }
+
+        #reply-bar { display: none; background: var(--panel-bg); padding: 6px 14px; border-top: 1px solid var(--panel-border); justify-content: space-between; align-items: center; font-size: 12.5px; color: var(--accent-bright); position: absolute; bottom: 58px; left: 8px; right: 8px; border-radius: 12px; z-index: 98; box-shadow: 0 -2px 10px rgba(0,0,0,0.2); }
+
+        footer {
+            position: absolute;
+            bottom: 8px;
+            left: 8px;
+            right: 8px;
+            height: 48px;
+            background: var(--panel-bg);
+            padding: 0 8px;
+            display: flex;
+            gap: 6px;
+            border-radius: 24px;
+            border: 1px solid var(--panel-border);
+            align-items: center;
             justify-content: space-between;
-            z-index: 99; 
+            z-index: 99;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
         }
-        .footer-left-btns, .footer-right-btns { 
-            display: flex; 
-            align-items: center; 
-            gap: 6px; 
-            flex-shrink: 0; 
-            height: 38px;
+        .footer-left-btns, .footer-right-btns {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            flex-shrink: 0;
+            height: 36px;
         }
-        footer input[type="text"] { 
-            flex: 1; 
-            height: 38px; 
+        footer input[type="text"] {
+            flex: 1;
+            height: 36px;
             margin: 0;
-            background: var(--bg-color); 
-            color: var(--text-color); 
-            border: 1px solid var(--panel-border); 
-            border-radius: 10px; 
-            padding: 0 12px; 
-            font-size: 15px; 
-            outline: none; 
-            min-width: 0; 
+            background: transparent;
+            color: var(--text-color);
+            border: none;
+            padding: 0 8px;
+            font-size: 15px;
+            outline: none;
+            min-width: 0;
         }
         footer button, footer label, footer select {
             margin: 0 !important;
         }
-        footer button#send-btn { 
-            width: 38px; 
-            height: 38px; 
-            border-radius: 10px; 
-            padding: 0; 
-            flex-shrink: 0; 
-            font-size: 16px; 
-            display: flex; 
-            align-items: center; 
-            justify-content: center; 
+        footer button#send-btn {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            padding: 0;
+            flex-shrink: 0;
+            font-size: 16px;
+            background: var(--accent-bright);
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
-        .icon-btn { 
-            background: var(--item-hover); 
-            border: 1px solid var(--panel-border); 
-            border-radius: 10px; 
-            width: 38px; 
-            height: 38px; 
-            padding: 0; 
+        .icon-btn {
+            background: transparent;
+            border: none;
+            border-radius: 50%;
+            width: 34px;
+            height: 34px;
+            padding: 0;
             margin: 0;
-            display: inline-flex; 
-            align-items: center; 
-            justify-content: center; 
-            cursor: pointer; 
-            color: var(--text-color); 
-            flex-shrink: 0; 
-            font-size: 16px; 
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            color: var(--text-muted);
+            flex-shrink: 0;
+            font-size: 17px;
             line-height: 1;
             vertical-align: middle;
+            transition: background 0.15s, color 0.15s;
         }
+        .icon-btn:hover { background: var(--item-hover); color: var(--text-color); }
+        header .icon-btn { background: var(--panel-elevated); border-radius: 10px; color: var(--text-color); }
         select.icon-btn {
             width: auto;
-            min-width: 44px;
+            min-width: 40px;
             padding: 0 4px;
+            border-radius: 10px;
             font-size: 11px;
-            font-weight: bold;
+            font-weight: 700;
             text-align: center;
+            color: var(--text-muted);
+            background: var(--panel-elevated);
         }
-        .recording { background: #c62828 !important; color: #fff !important; }
+        .recording { background: #e53935 !important; color: #fff !important; }
 
-        .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100dvh; background: rgba(0,0,0,0.85); z-index: 1000; justify-content: center; align-items: center; padding: 15px; }
-        .modal-box { background: var(--panel-bg); border: 1px solid var(--panel-border); border-radius: 12px; width: 100%; max-width: 480px; max-height: 90vh; display: flex; flex-direction: column; overflow: hidden; }
-        .modal-header { padding: 15px; background: var(--item-hover); border-bottom: 1px solid var(--panel-border); display: flex; justify-content: space-between; align-items: center; }
-        .modal-body { padding: 15px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 10px; }
+        .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100dvh; background: rgba(0, 0, 0, 0.75); z-index: 1000; justify-content: center; align-items: center; padding: 15px; }
+        .modal-box { background: var(--panel-bg); border: 1px solid var(--panel-border); border-radius: 18px; width: 100%; max-width: 460px; max-height: 90vh; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 18px 45px rgba(0,0,0,0.5); }
+        .modal-header { padding: 14px 18px; background: var(--panel-elevated); border-bottom: 1px solid var(--panel-border); display: flex; justify-content: space-between; align-items: center; }
+        .modal-body { padding: 16px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 10px; }
 
         .region-select-box {
             display: flex;
             flex-direction: column;
-            gap: 4px;
-            background: var(--item-hover);
+            gap: 6px;
+            background: var(--panel-elevated);
             padding: 10px 12px;
-            border-radius: 10px;
-            border: 1px solid var(--panel-border);
+            border-radius: 12px;
         }
         .region-select-box label {
             font-size: 12px;
-            color: #aaa;
-            font-weight: bold;
+            color: var(--text-muted);
+            font-weight: 600;
         }
         .region-select-box select {
             width: 100%;
             padding: 10px;
-            border-radius: 8px;
+            border-radius: 10px;
             border: 1px solid var(--panel-border);
             background: var(--bg-color);
             color: var(--text-color);
@@ -205,60 +244,62 @@
             cursor: pointer;
         }
 
-        .room-item { background: var(--item-hover); border: 1px solid var(--panel-border); border-radius: 10px; padding: 12px; display: flex; justify-content: space-between; align-items: center; }
-        .room-title { font-weight: bold; font-size: 15px; }
-        .room-info { font-size: 12px; color: #aaa; }
-        
-        .poker-table { background: #1b4332; border: 6px solid #2d6a4f; border-radius: 120px; padding: 15px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; justify-items: center; align-items: center; margin: 10px 0; }
-        .table-slot { width: 90px; height: 110px; background: rgba(0,0,0,0.4); border: 2px dashed #40916c; border-radius: 12px; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 6px; text-align: center; position: relative; }
-        .table-slot.occupied { border-style: solid; border-color: #52b788; background: rgba(0,0,0,0.7); }
+        .room-item { background: var(--panel-elevated); border-radius: 12px; padding: 12px; display: flex; justify-content: space-between; align-items: center; }
+        .room-title { font-weight: 700; font-size: 15px; }
+        .room-info { font-size: 12px; color: var(--text-muted); }
+
+        .poker-table { background: #143628; border: 5px solid #1f543e; border-radius: 110px; padding: 15px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; justify-items: center; align-items: center; margin: 10px 0; }
+        .table-slot { width: 90px; height: 110px; background: rgba(0,0,0,0.35); border: 2px dashed #2e7d5c; border-radius: 14px; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 6px; text-align: center; position: relative; }
+        .table-slot.occupied { border-style: solid; border-color: #4dcd5e; background: rgba(0,0,0,0.65); }
         .slot-avatar { width: 42px; height: 42px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 16px; margin-bottom: 2px; background-size: cover; background-position: center; }
         .slot-name { font-size: 11px; font-weight: bold; color: #fff; width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .slot-status { font-size: 10px; color: #aaa; }
 
         .audio-meter-box { width: 48px; height: 3px; background: #333; border-radius: 2px; overflow: hidden; margin: 2px 0; display: none; }
-        .audio-meter-bar { height: 100%; width: 0%; background: #4caf50; transition: width 0.04s ease; }
+        .audio-meter-bar { height: 100%; width: 0%; background: #4dcd5e; transition: width 0.04s ease; }
 
-        .logout-btn { background: transparent; border: 1px solid #555; color: #aaa; padding: 4px 8px; font-size: 12px; border-radius: 6px; cursor: pointer; width: auto; flex-shrink: 0; margin: 0; }
-        .admin-nav-btn { background: #d32f2f; color: #fff; padding: 5px 8px; font-size: 11px; border-radius: 6px; border: none; font-weight: bold; cursor: pointer; display: none; margin: 0; width: auto; }
+        .logout-btn { background: var(--panel-elevated); border: none; color: var(--text-muted); padding: 5px 10px; font-size: 12px; border-radius: 8px; cursor: pointer; width: auto; flex-shrink: 0; margin: 0; }
+        .logout-btn:hover { color: var(--text-color); }
+        .admin-nav-btn { background: #e53935; color: #fff; padding: 5px 9px; font-size: 11px; border-radius: 8px; border: none; font-weight: 700; cursor: pointer; display: none; margin: 0; width: auto; }
 
         .avatar-upload-box { display: flex; flex-direction: column; align-items: center; gap: 10px; margin-bottom: 6px; }
-        .big-avatar { width: 70px; height: 70px; border-radius: 50%; background: #3B8ED0; display: flex; align-items: center; justify-content: center; font-size: 28px; font-weight: bold; color: #fff; background-size: cover; background-position: center; border: 2px solid #555; cursor: pointer; }
+        .big-avatar { width: 74px; height: 74px; border-radius: 50%; background: var(--accent-bright); display: flex; align-items: center; justify-content: center; font-size: 28px; font-weight: bold; color: #fff; background-size: cover; background-position: center; cursor: pointer; }
 
-        #emoji-picker { display: none; position: absolute; bottom: 60px; left: 10px; background: var(--panel-bg); border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px; z-index: 100; font-size: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
+        #emoji-picker { display: none; position: absolute; bottom: 64px; left: 12px; background: var(--panel-elevated); border: 1px solid var(--panel-border); border-radius: 16px; padding: 12px; z-index: 100; font-size: 20px; box-shadow: 0 8px 24px rgba(0,0,0,0.45); }
         #emoji-picker span { cursor: pointer; text-align: center; }
-        #emoji-picker span:hover { transform: scale(1.3); }
+        #emoji-picker span:hover { transform: scale(1.25); }
 
-        .sticker-img { width: 100px; height: 100px; object-fit: contain; cursor: pointer; }
+        .sticker-img { width: 105px; height: 105px; object-fit: contain; cursor: pointer; }
 
-        #lightbox { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100dvh; background: rgba(0,0,0,0.9); z-index: 2000; justify-content: center; align-items: center; }
-        #lightbox img, #lightbox video { max-width: 90%; max-height: 90%; border-radius: 12px; box-shadow: 0 0 20px rgba(0,0,0,0.8); }
+        #lightbox { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100dvh; background: rgba(0,0,0,0.92); z-index: 2000; justify-content: center; align-items: center; }
+        #lightbox img, #lightbox video { max-width: 90%; max-height: 90%; border-radius: 14px; }
 
         .media-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 10px; }
-        .media-grid-item { width: 100%; height: 90px; border-radius: 8px; background-size: cover; background-position: center; cursor: pointer; border: 1px solid var(--panel-border); }
+        .media-grid-item { width: 100%; height: 90px; border-radius: 10px; background-size: cover; background-position: center; cursor: pointer; }
 
-        .admin-user-row { display: flex; justify-content: space-between; align-items: center; background: var(--item-hover); padding: 8px 12px; border-radius: 8px; border: 1px solid var(--panel-border); font-size: 13px; }
+        .admin-user-row { display: flex; justify-content: space-between; align-items: center; background: var(--panel-elevated); padding: 9px 12px; border-radius: 10px; font-size: 13px; }
 
-        #group-call-screen { position: fixed; top: 0; left: 0; width: 100vw; height: 100dvh; background: rgba(0,0,0,0.95); z-index: 3500; display: flex; flex-direction: column; }
+        #group-call-screen { position: fixed; top: 0; left: 0; width: 100vw; height: 100dvh; background: #0b1118; z-index: 3500; display: flex; flex-direction: column; }
         #group-call-screen.hidden { display: none; }
         .video-grid { flex: 1; display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; padding: 15px; overflow-y: auto; }
-        .video-card { background: #1a1a1a; border-radius: 12px; overflow: hidden; position: relative; border: 2px solid var(--panel-border); min-height: 180px; display: flex; align-items: center; justify-content: center; }
+        .video-card { background: var(--panel-bg); border-radius: 16px; overflow: hidden; position: relative; border: 1px solid var(--panel-border); min-height: 180px; display: flex; align-items: center; justify-content: center; }
         .video-card video { width: 100%; height: 100%; object-fit: cover; }
-        .video-card .user-label { position: absolute; bottom: 8px; left: 8px; background: rgba(0,0,0,0.7); padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: bold; }
-        .group-call-controls { display: flex; justify-content: center; gap: 8px; padding: 15px; background: var(--panel-bg); border-top: 1px solid var(--panel-border); flex-wrap: wrap; }
-        .ctrl-btn { padding: 10px 14px; border-radius: 8px; border: none; background: var(--item-hover); color: #fff; font-weight: bold; cursor: pointer; font-size: 12px; width: auto; margin: 0; }
-        .ctrl-btn.off { background: #d32f2f; }
-        .btn-danger { background: #c62828; }
+        .video-card .user-label { position: absolute; bottom: 10px; left: 10px; background: rgba(14, 22, 33, 0.75); padding: 4px 10px; border-radius: 8px; font-size: 12px; font-weight: 600; }
+        .group-call-controls { display: flex; justify-content: center; gap: 10px; padding: 16px; background: var(--panel-bg); border-top: 1px solid var(--panel-border); flex-wrap: wrap; }
+        .ctrl-btn { padding: 10px 16px; border-radius: 12px; border: none; background: var(--panel-elevated); color: #fff; font-weight: 600; cursor: pointer; font-size: 13px; width: auto; margin: 0; }
+        .ctrl-btn.off { background: #e53935; }
+        .btn-danger { background: #e53935; }
 
-        #call-modal { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100dvh; background: rgba(0,0,0,0.85); z-index: 4000; flex-direction: column; justify-content: center; align-items: center; gap: 20px; }
-        .call-avatar { width: 100px; height: 100px; border-radius: 50%; font-size: 36px; display: flex; align-items: center; justify-content: center; border: 3px solid #3B8ED0; background-size: cover; background-position: center; }
+        #call-modal { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100dvh; background: rgba(14, 22, 33, 0.94); z-index: 4000; flex-direction: column; justify-content: center; align-items: center; gap: 20px; }
+        .call-avatar { width: 104px; height: 104px; border-radius: 50%; font-size: 38px; display: flex; align-items: center; justify-content: center; border: 3px solid var(--accent-bright); background-size: cover; background-position: center; }
 
         @media (max-width: 600px) {
             #sidebar { position: fixed; left: 0; top: 0; bottom: 0; width: 80%; max-width: 280px; transform: translateX(-100%); }
             #sidebar.open { transform: translateX(0); }
             .poker-table { grid-template-columns: repeat(2, 1fr); border-radius: 30px; }
-            .video-note-wrap { width: 145px; height: 145px; }
-            .icon-btn, footer button#send-btn { width: 34px; height: 36px; font-size: 15px; }
+            .video-note-wrap { width: 150px; height: 150px; }
+            .icon-btn { width: 32px; height: 32px; font-size: 15px; }
+            footer button#send-btn { width: 34px; height: 34px; font-size: 15px; }
         }
     </style>
 </head>
@@ -270,7 +311,7 @@
             <input type="text" id="username" data-i18n-ph="ph_login" placeholder="Логин">
             <input type="password" id="password" data-i18n-ph="ph_pass" placeholder="Пароль">
             <button onclick="login()" data-i18n="btn_login">Войти</button>
-            <button onclick="register()" style="background: transparent; border: 1px solid #1F6AA5;" data-i18n="btn_register">Регистрация</button>
+            <button onclick="register()" style="background: transparent; border: 1px solid var(--accent-bright); color: var(--accent-bright);" data-i18n="btn_register">Регистрация</button>
             <div id="status" style="margin-top:10px; font-size:13px; color:#ff5555;"></div>
         </div>
     </div>
@@ -280,16 +321,16 @@
 
         <div id="sidebar">
             <div class="sidebar-header">
-                <div style="display:flex; align-items:center; gap:8px; cursor:pointer; overflow:hidden;" onclick="openProfileModal()">
+                <div style="display:flex; align-items:center; gap:10px; cursor:pointer; overflow:hidden;" onclick="openProfileModal()">
                     <div id="my-avatar" class="avatar">?</div>
-                    <span id="user-display" style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:14px;">...</span>
+                    <span id="user-display" style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:14.5px;">...</span>
                 </div>
                 <button class="logout-btn" onclick="logout()" data-i18n="btn_logout">Выйти</button>
             </div>
             <div class="chat-list">
                 <div class="section-title">
                     <span data-i18n="title_channels">Каналы</span>
-                    <button onclick="createChannelPrompt()" style="width:auto; padding:0 6px; height:20px; font-size:12px; margin:0;">+</button>
+                    <button onclick="createChannelPrompt()" style="width:auto; padding:0 7px; height:20px; font-size:12px; margin:0; border-radius:6px;">+</button>
                 </div>
                 <div id="channels-list"></div>
                 <div class="section-title" data-i18n="title_dms">Личные чаты</div>
@@ -302,22 +343,22 @@
                 <div class="header-left">
                     <button class="toggle-btn" onclick="event.stopPropagation(); toggleSidebar();">☰</button>
                     <div class="header-title-box">
-                        <h3 id="chat-title" style="font-size:15px;">#general</h3>
-                        <div id="user-last-seen" style="font-size:10px; color:#aaa;"></div>
-                        <div id="typing-indicator" style="font-size:11px; color:#3B8ED0; height:13px;"></div>
+                        <h3 id="chat-title" style="font-size:15.5px; font-weight:700;">#general</h3>
+                        <div id="user-last-seen" style="font-size:11px; color:var(--text-muted);"></div>
+                        <div id="typing-indicator" style="font-size:11px; color:var(--accent-bright); height:13px;"></div>
                     </div>
                 </div>
                 <div style="display:flex; align-items:center; gap:6px;">
-                    <button id="group-call-btn" class="icon-btn" style="height:32px; width:auto; padding:0 8px; font-size:12px; background:#2e7d32; margin:0;" onclick="startGroupCall()" title="Видеозвонок" data-i18n="btn_video_call">📹 Видео</button>
-                    <button id="call-btn" class="icon-btn" style="height:32px; width:36px; display:none; margin:0;" onclick="startDirectCall()" title="Аудиозвонок">📞</button>
-                    <button class="icon-btn" style="height:32px; width:auto; padding:0 8px; font-size:12px; margin:0;" onclick="openGalleryModal()" data-i18n="btn_media">🖼️ Медиа</button>
+                    <button id="group-call-btn" class="icon-btn" style="height:32px; width:auto; padding:0 10px; font-size:12px; font-weight:600; background:#2e7d32; color:#fff; margin:0;" onclick="startGroupCall()" title="Видеозвонок" data-i18n="btn_video_call">📹 Видео</button>
+                    <button id="call-btn" class="icon-btn" style="height:32px; width:34px; display:none; margin:0;" onclick="startDirectCall()" title="Аудиозвонок">📞</button>
+                    <button class="icon-btn" style="height:32px; width:auto; padding:0 10px; font-size:12px; font-weight:600; margin:0;" onclick="openGalleryModal()" data-i18n="btn_media">🖼️ Медиа</button>
                     <button id="admin-btn" class="admin-nav-btn" onclick="openAdminModal()" data-i18n="btn_admin">⚙️ Админка</button>
                 </div>
             </header>
 
             <div id="pinned-bar">
                 <span>📌 <b id="pinned-msg-text">...</b></span>
-                <button onclick="unpinMsg()" style="width:auto; padding:0 6px; background:transparent; border:none; color:#aaa; cursor:pointer; margin:0;">✕</button>
+                <button onclick="unpinMsg()" style="width:auto; padding:0 6px; background:transparent; border:none; color:var(--text-muted); cursor:pointer; margin:0;">✕</button>
             </div>
 
             <div class="search-bar">
@@ -328,13 +369,13 @@
 
             <div id="reply-bar">
                 <span id="reply-text">Ответ...</span>
-                <button onclick="cancelReply()" style="width:auto; padding:2px 8px; background:transparent; border:none; color:#aaa; cursor:pointer; margin:0;">✕</button>
+                <button onclick="cancelReply()" style="width:auto; padding:2px 8px; background:transparent; border:none; color:var(--text-muted); cursor:pointer; margin:0;">✕</button>
             </div>
 
             <div id="emoji-picker">
-                <div style="display:flex; gap:10px; border-bottom:1px solid var(--panel-border); padding-bottom:5px; margin-bottom:5px; font-size:13px; font-weight:bold;">
-                    <span onclick="switchPickerTab('emoji')" style="cursor:pointer; color:#3B8ED0;" data-i18n="tab_emoji">😃 Смайлы</span>
-                    <span onclick="switchPickerTab('stickers')" style="cursor:pointer; color:#3B8ED0;" data-i18n="tab_stickers">🎨 Стикеры</span>
+                <div style="display:flex; gap:12px; border-bottom:1px solid var(--panel-border); padding-bottom:6px; margin-bottom:6px; font-size:13px; font-weight:700;">
+                    <span onclick="switchPickerTab('emoji')" style="cursor:pointer; color:var(--accent-bright);" data-i18n="tab_emoji">😃 Смайлы</span>
+                    <span onclick="switchPickerTab('stickers')" style="cursor:pointer; color:var(--accent-bright);" data-i18n="tab_stickers">🎨 Стикеры</span>
                 </div>
                 <div id="tab-emoji" style="display:grid; grid-template-columns: repeat(5, 1fr); gap:8px;">
                     <span onclick="addEmoji('👍')">👍</span><span onclick="addEmoji('❤️')">❤️</span><span onclick="addEmoji('🔥')">🔥</span>
@@ -368,7 +409,7 @@
                         <option value="10">10s</option>
                         <option value="60">1m</option>
                     </select>
-                    <button id="send-btn" onclick="sendMsg()">></button>
+                    <button id="send-btn" onclick="sendMsg()">➤</button>
                 </div>
             </footer>
         </div>
@@ -390,14 +431,14 @@
         </div>
     </div>
 
-    <!-- ОКНО ВХОДЯЩЕГО / ИСХОДЯЩЕГО ЗВОНКА (АУДИО И ВИДЕО) -->
+    <!-- ОКНО ВХОДЯЩЕГО / ИСХОДЯЩЕГО ЗВОНКА -->
     <div id="call-modal">
         <div id="call-user-avatar" class="call-avatar">?</div>
         <h3 id="call-user-name">Звонок...</h3>
-        <p id="call-status-text" style="color:#aaa; font-size:14px; text-align:center; padding:0 10px;">Вызов...</p>
+        <p id="call-status-text" style="color:var(--text-muted); font-size:14px; text-align:center; padding:0 10px;">Вызов...</p>
         <div style="display:flex; gap:15px;">
-            <button id="accept-call-btn" style="background:#2e7d32; width:auto; padding:10px 20px; display:none;" onclick="acceptCall()" data-i18n="btn_accept">Принять</button>
-            <button style="background:#c62828; width:auto; padding:10px 20px;" onclick="endCall()" data-i18n="btn_decline">Сбросить</button>
+            <button id="accept-call-btn" style="background:#2e7d32; width:auto; padding:10px 22px; display:none;" onclick="acceptCall()" data-i18n="btn_accept">Принять</button>
+            <button style="background:#e53935; width:auto; padding:10px 22px;" onclick="endCall()" data-i18n="btn_decline">Сбросить</button>
         </div>
     </div>
 
@@ -406,7 +447,7 @@
         <div class="modal-box">
             <div class="modal-header">
                 <h3 data-i18n="title_gallery">🖼️ Галерея медиафайлов</h3>
-                <button onclick="closeGalleryModal()" style="width:auto; padding:4px 10px; background:#444; margin:0;">✕</button>
+                <button onclick="closeGalleryModal()" style="width:auto; padding:4px 10px; background:var(--panel-bg); margin:0;">✕</button>
             </div>
             <div class="modal-body">
                 <div id="gallery-container" class="media-grid"></div>
@@ -419,34 +460,33 @@
         <div class="modal-box">
             <div class="modal-header">
                 <h3 data-i18n="title_user_card">Карточка пользователя</h3>
-                <button onclick="closeUserInfoModal()" style="width:auto; padding:4px 10px; background:#444; margin:0;">✕</button>
+                <button onclick="closeUserInfoModal()" style="width:auto; padding:4px 10px; background:var(--panel-bg); margin:0;">✕</button>
             </div>
             <div class="modal-body" style="text-align:center;">
                 <div id="info-user-avatar" class="big-avatar" style="margin: 0 auto 10px auto;">?</div>
                 <h3 id="info-user-name">...</h3>
-                <p id="info-user-role" style="font-size:12px; color:#3B8ED0; margin-bottom:10px;">User</p>
-                <button id="info-pm-btn" style="background:#1F6AA5;" data-i18n="btn_write_pm">💬 Написать в личку</button>
+                <p id="info-user-role" style="font-size:12px; color:var(--accent-bright); margin-bottom:10px;">User</p>
+                <button id="info-pm-btn" data-i18n="btn_write_pm">💬 Написать в личку</button>
             </div>
         </div>
     </div>
 
-    <!-- МОДАЛЬНОЕ ОКНО ПРОФИЛЯ (ЯЗЫК + РЕГИОН) -->
+    <!-- МОДАЛЬНОЕ ОКНО ПРОФИЛЯ -->
     <div id="profile-modal" class="modal-overlay">
         <div class="modal-box">
             <div class="modal-header">
                 <h3 data-i18n="title_profile">👤 Настройки Профиля</h3>
-                <button onclick="closeProfileModal()" style="width:auto; padding:4px 10px; background:#444; margin:0;">✕</button>
+                <button onclick="closeProfileModal()" style="width:auto; padding:4px 10px; background:var(--panel-bg); margin:0;">✕</button>
             </div>
             <div class="modal-body">
                 <div class="avatar-upload-box">
                     <div id="profile-big-avatar" class="big-avatar" onclick="openLightbox(this.style.backgroundImage)">?</div>
-                    <label style="background:#333; padding:6px 12px; border-radius:8px; border:1px solid #555; font-size:12px; cursor:pointer;" data-i18n="btn_change_avatar">
+                    <label style="background:var(--panel-elevated); padding:7px 14px; border-radius:10px; font-size:12px; font-weight:600; cursor:pointer;" data-i18n="btn_change_avatar">
                         📷 Изменить аватарку
                         <input type="file" id="avatar-input" accept="image/*" style="display:none;" onchange="uploadAvatar()">
                     </label>
                 </div>
 
-                <!-- ВЫБОР РЕГИОНА -->
                 <div class="region-select-box">
                     <label for="regionSelect" data-i18n="label_region">🌍 Регион подключения (Сервер):</label>
                     <select id="regionSelect" onchange="changeRegion(this.value)">
@@ -458,14 +498,13 @@
                     </select>
                 </div>
 
-                <!-- ПЕРЕКЛЮЧАТЕЛЬ ЯЗЫКА -->
                 <button id="langToggleBtn" onclick="toggleLanguage()" style="background:#2e7d32; margin-top:4px; padding:12px;">🌐 Язык / Language: RU</button>
-                <button onclick="requestPushPermission()" style="background:#1F6AA5; margin-top:4px; padding:12px;" data-i18n="btn_push">🔔 Разрешить Push-уведомления (Фон)</button>
-                <button onclick="toggleTheme()" style="background:#444; margin-top:4px;" data-i18n="btn_theme">🌗 Сменить тему оформления</button>
-                <button onclick="openMafiaModal()" style="background:#8e24aa; margin-top:4px; padding:12px;" data-i18n="btn_mafia">🕵️ Игра «Мафия»</button>
+                <button onclick="requestPushPermission()" style="margin-top:4px; padding:12px;" data-i18n="btn_push">🔔 Разрешить Push-уведомления (Фон)</button>
+                <button onclick="toggleTheme()" style="background:var(--panel-elevated); color:var(--text-color); margin-top:4px;" data-i18n="btn_theme">🌗 Сменить тему оформления</button>
+                <button onclick="openMafiaModal()" style="background:#7b1fa2; margin-top:4px; padding:12px;" data-i18n="btn_mafia">🕵️ Игра «Мафия»</button>
 
                 <hr style="border:0; border-top:1px solid var(--panel-border); margin:8px 0;">
-                <h4 style="font-size:14px; color:#aaa;" data-i18n="title_change_pass">Смена пароля</h4>
+                <h4 style="font-size:14px; color:var(--text-muted);" data-i18n="title_change_pass">Смена пароля</h4>
                 <input type="password" id="old-pass" data-i18n-ph="ph_old_pass" placeholder="Старый пароль">
                 <input type="password" id="new-pass" data-i18n-ph="ph_new_pass" placeholder="Новый пароль">
                 <button onclick="changePassword()" style="background:#2e7d32;" data-i18n="btn_save_pass">Сохранить новый пароль</button>
@@ -479,10 +518,10 @@
         <div class="modal-box">
             <div class="modal-header">
                 <h3 data-i18n="title_admin">⚙️ Панель Администратора</h3>
-                <button onclick="closeAdminModal()" style="width:auto; padding:4px 10px; background:#444; margin:0;">✕</button>
+                <button onclick="closeAdminModal()" style="width:auto; padding:4px 10px; background:var(--panel-bg); margin:0;">✕</button>
             </div>
             <div class="modal-body">
-                <p style="font-size:13px; color:#aaa; margin-bottom:10px;" data-i18n="desc_admin">Управление пользователями системы:</p>
+                <p style="font-size:13px; color:var(--text-muted); margin-bottom:10px;" data-i18n="desc_admin">Управление пользователями системы:</p>
                 <div id="admin-users-list" style="display:flex; flex-direction:column; gap:8px;"></div>
             </div>
         </div>
@@ -493,36 +532,36 @@
         <div class="modal-box">
             <div class="modal-header">
                 <h3 id="mafia-modal-title">🕵️ Лобби комнат «Мафии»</h3>
-                <button onclick="closeMafiaModal()" style="width:auto; padding:4px 10px; background:#444; margin:0;">✕</button>
+                <button onclick="closeMafiaModal()" style="width:auto; padding:4px 10px; background:var(--panel-bg); margin:0;">✕</button>
             </div>
             <div class="modal-body">
                 <div id="mafia-rooms-screen">
-                    <p style="font-size:13px; color:#aaa; margin-bottom:10px;" data-i18n="mafia_choose">Выберите свободную комнату для игры:</p>
+                    <p style="font-size:13px; color:var(--text-muted); margin-bottom:10px;" data-i18n="mafia_choose">Выберите свободную комнату для игры:</p>
                     <div id="mafia-rooms-container" style="display:flex; flex-direction:column; gap:8px;"></div>
                 </div>
 
                 <div id="mafia-gameplay-screen" style="display:none;">
                     <div style="display:flex; justify-content:space-between; align-items:center;">
-                        <button onclick="backToMafiaRooms()" style="width:auto; padding:6px 12px; background:#444; font-size:12px; margin:0;" data-i18n="btn_back">← Назад</button>
-                        <span id="room-phase-badge" style="background:#3B8ED0; padding:4px 8px; border-radius:6px; font-size:12px; font-weight:bold;">Лобби</span>
-                        <span id="mafia-timer-badge" style="background:#d32f2f; padding:4px 8px; border-radius:6px; font-size:12px; font-weight:bold; display:none;">⏱ 60s</span>
+                        <button onclick="backToMafiaRooms()" style="width:auto; padding:6px 12px; background:var(--panel-elevated); font-size:12px; margin:0;" data-i18n="btn_back">← Назад</button>
+                        <span id="room-phase-badge" style="background:var(--accent-bright); padding:4px 10px; border-radius:8px; font-size:12px; font-weight:bold;">Лобби</span>
+                        <span id="mafia-timer-badge" style="background:#e53935; padding:4px 10px; border-radius:8px; font-size:12px; font-weight:bold; display:none;">⏱ 60s</span>
                     </div>
 
                     <div class="poker-table" id="poker-table-slots"></div>
 
                     <div style="display:flex; justify-content:space-between; align-items:center; font-size:13px;">
                         <div><span data-i18n="mafia_role">Моя роль:</span> <b id="my-role-text">Скрыта</b> <button onclick="toggleRoleShow()" style="width:auto; padding:2px 6px; font-size:10px; margin:0;">👁</button></div>
-                        <button id="mic-toggle-btn" onclick="toggleMic()" style="width:auto; padding:4px 10px; font-size:11px; background:#c62828; margin:0;">🔇 Микрофон ВЫКЛ</button>
+                        <button id="mic-toggle-btn" onclick="toggleMic()" style="width:auto; padding:5px 10px; font-size:11px; background:#e53935; margin:0;">🔇 Микрофон ВЫКЛ</button>
                     </div>
 
                     <div style="display:flex; gap:8px; margin-top:5px;">
-                        <button id="join-room-btn" onclick="joinActiveRoom()" style="background:#1F6AA5;" data-i18n="btn_take_seat">Занять место</button>
-                        <button id="leave-room-btn" onclick="leaveActiveRoom()" style="background:#c62828; display:none;" data-i18n="btn_leave_seat">Встать из-за стола</button>
+                        <button id="join-room-btn" onclick="joinActiveRoom()" data-i18n="btn_take_seat">Занять место</button>
+                        <button id="leave-room-btn" onclick="leaveActiveRoom()" style="background:#e53935; display:none;" data-i18n="btn_leave_seat">Встать из-за стола</button>
                         <button onclick="startActiveRoomGame()" style="background:#2e7d32;" data-i18n="btn_start_game">Старт игры</button>
                     </div>
 
                     <h4 style="font-size:13px; margin-top:5px;" data-i18n="title_logs">События игры:</h4>
-                    <div id="room-logs-box" style="background:#151515; border:1px solid #333; padding:8px; border-radius:8px; font-size:12px; height:90px; overflow-y:auto; color:#aaa;"></div>
+                    <div id="room-logs-box" style="background:var(--bg-color); border:1px solid var(--panel-border); padding:8px; border-radius:10px; font-size:12px; height:90px; overflow-y:auto; color:var(--text-muted);"></div>
                 </div>
             </div>
         </div>
@@ -531,7 +570,7 @@
     <!-- ЛАЙТБОКС -->
     <div id="lightbox" onclick="closeLightbox()">
         <img id="lightbox-img" src="" style="display:none;">
-        <video id="lightbox-video" controls autoplay loop playsinline webkit-playsinline style="display:none; max-width:90%; max-height:90%; border-radius:12px;"></video>
+        <video id="lightbox-video" controls autoplay loop playsinline webkit-playsinline style="display:none; max-width:90%; max-height:90%; border-radius:14px;"></video>
     </div>
 
     <div id="audio-peers-container" style="display:none;"></div>
@@ -693,7 +732,7 @@
         let showRoleFlag = false;
         let mySecretRole = null;
         let editingMsgId = null;
-        
+
         let isMicOn = false;
         let mediaStream = null;
         let audioContext = null;
@@ -729,11 +768,11 @@
 
         const VAPID_PUBLIC_KEY = "{{ vapid_public_key }}";
 
-        const iceServers = { 
+        const iceServers = {
             iceServers: [
                 { urls: 'stun:stun.l.google.com:19302' },
                 { urls: 'stun:stun1.l.google.com:19302' }
-            ] 
+            ]
         };
 
         if ('serviceWorker' in navigator) {
@@ -1107,11 +1146,11 @@
         socket.on('users_list', (data) => {
             const list = document.getElementById('users-list');
             list.innerHTML = '';
-            
+
             const savedTitle = (i18n[currentLang] && i18n[currentLang].saved_chat) ? i18n[currentLang].saved_chat : 'Избранное';
             const savedDiv = document.createElement('div');
             savedDiv.className = 'chat-item' + (currentTarget === currentUser ? ' active' : '');
-            savedDiv.innerHTML = `<div class="avatar" style="background:#3B8ED0;">📁</div><span>${savedTitle}</span>`;
+            savedDiv.innerHTML = `<div class="avatar" style="background:var(--accent-bright);">📁</div><span>${savedTitle}</span>`;
             savedDiv.onclick = () => switchChat(currentUser);
             list.appendChild(savedDiv);
 
@@ -1193,12 +1232,12 @@
                 const row = document.createElement('div');
                 row.className = 'admin-user-row';
                 row.innerHTML = `
-                    <div><b>${u.username}</b> <span style="font-size:11px; color:#aaa;">(${u.role})</span></div>
+                    <div><b>${u.username}</b> <span style="font-size:11px; color:var(--text-muted);">(${u.role})</span></div>
                     <div style="display:flex; gap:6px;">
-                        <button onclick="adminSetRole('${u.username}', '${u.role === 'admin' ? 'user' : 'admin'}')" style="width:auto; padding:4px 8px; font-size:11px; background:#1F6AA5; margin:0;">
+                        <button onclick="adminSetRole('${u.username}', '${u.role === 'admin' ? 'user' : 'admin'}')" style="width:auto; padding:4px 8px; font-size:11px; margin:0;">
                             ${u.role === 'admin' ? 'User' : 'Admin'}
                         </button>
-                        ${u.username !== currentUser ? `<button onclick="adminDeleteUser('${u.username}')" style="width:auto; padding:4px 8px; font-size:11px; background:#d32f2f; margin:0;">Удалить</button>` : ''}
+                        ${u.username !== currentUser ? `<button onclick="adminDeleteUser('${u.username}')" style="width:auto; padding:4px 8px; font-size:11px; background:#e53935; margin:0;">Удалить</button>` : ''}
                     </div>
                 `;
                 container.appendChild(row);
@@ -1220,7 +1259,7 @@
         socket.on('pass_response', (data) => {
             const st = document.getElementById('pass-status');
             st.innerText = data.message;
-            st.style.color = data.status === 'ok' ? '#4caf50' : '#ff5555';
+            st.style.color = data.status === 'ok' ? '#4dcd5e' : '#ff5555';
             if (data.status === 'ok') {
                 localStorage.setItem('pychat_pass', document.getElementById('new-pass').value.trim());
                 document.getElementById('old-pass').value = ''; document.getElementById('new-pass').value = '';
@@ -1267,7 +1306,7 @@
             if (editingMsgId) {
                 socket.emit('edit_msg', { msg_id: editingMsgId, new_text: txt, user: currentUser });
                 editingMsgId = null;
-                document.getElementById('send-btn').innerText = '>';
+                document.getElementById('send-btn').innerText = '➤';
             } else {
                 socket.emit('send_msg', {
                     sender: currentUser, target: currentTarget, msg: txt, msg_type: 'text', ttl: ttl,
@@ -1418,7 +1457,7 @@
             }
         }
 
-        socket.on('new_msg', (data) => { 
+        socket.on('new_msg', (data) => {
             if (data.sender !== currentUser) {
                 playNotificationSound();
 
@@ -1443,7 +1482,7 @@
                 }
             }
             if (data.target === currentTarget || data.sender === currentTarget || (data.target.startsWith('#') && data.target === currentTarget)) {
-                appendMessage(data); 
+                appendMessage(data);
                 socket.emit('mark_read', { user: currentUser, target: currentTarget });
             }
         });
@@ -1486,15 +1525,15 @@
                     <div style="font-weight: bold; font-size: 14px; margin-bottom: 4px;">
                         ${isIncoming ? incTitle + msg.sender : outTitle + msg.target}
                     </div>
-                    <div style="font-size: 12px; color: #aaa;">${isIncoming ? incSub : outSub}</div>
+                    <div style="font-size: 12px; color: var(--text-muted);">${isIncoming ? incSub : outSub}</div>
                     ${isIncoming ? `
                         <div class="call-card-btns">
                             <button style="background: #2e7d32;" onclick="acceptCallFromCard('${msg.sender}', '${msg.roomId || ''}', ${isVid})">${btnAcceptTxt}</button>
-                            <button style="background: #c62828;" onclick="endCall()">${btnDeclineTxt}</button>
+                            <button style="background: #e53935;" onclick="endCall()">${btnDeclineTxt}</button>
                         </div>
                     ` : `
                         <div class="call-card-btns">
-                            <button style="background: #c62828;" onclick="endCall()">${btnDeclineTxt}</button>
+                            <button style="background: #e53935;" onclick="endCall()">${btnDeclineTxt}</button>
                         </div>
                     `}
                 `;
@@ -1518,9 +1557,9 @@
                 try {
                     const fileData = JSON.parse(msg.msg);
                     if (/\.(jpg|jpeg|png|gif|webp)$/i.test(fileData.name)) {
-                        contentHtml = `<img src="data:image/jpeg;base64,${fileData.data}" style="max-width:180px; border-radius:8px; cursor:pointer;" onclick="openLightbox(this.src)">`;
+                        contentHtml = `<img src="data:image/jpeg;base64,${fileData.data}" style="max-width:190px; border-radius:10px; cursor:pointer;" onclick="openLightbox(this.src)">`;
                     } else {
-                        contentHtml = `<a href="data:application/octet-stream;base64,${fileData.data}" download="${fileData.name}" style="color:#fff;">📁 ${fileData.name}</a>`;
+                        contentHtml = `<a href="data:application/octet-stream;base64,${fileData.data}" download="${fileData.name}" style="color:inherit;">📁 ${fileData.name}</a>`;
                     }
                 } catch(e) {}
             } else if (msg.msg_type === 'voice') {
@@ -1531,7 +1570,7 @@
                     if (parsed && parsed.data) { rawB64 = parsed.data; mime = parsed.mime || 'audio/mp4'; }
                 } catch(e) { mime = 'audio/webm'; }
                 const blobUrl = base64ToBlobUrl(rawB64, mime);
-                contentHtml = `<audio controls playsinline preload="metadata" src="${blobUrl}" style="height:34px; width:180px;"></audio>`;
+                contentHtml = `<audio controls playsinline preload="metadata" src="${blobUrl}" style="height:34px; width:185px;"></audio>`;
             } else if (msg.msg_type === 'video_note') {
                 let rawB64 = msg.msg;
                 let mime = 'video/mp4';
@@ -1629,7 +1668,6 @@
             });
         }
 
-        // --- ВИДЕОЗВОНОК (КАК ОБЫЧНЫЙ ЗВОНОК С ЭКРАНОМ ВЫЗОВА ДЛЯ 1-НА-1 И КОМНАТОЙ ДЛЯ КАНАЛОВ) ---
         async function startGroupCall() {
             if (currentTarget === currentUser) return;
 
@@ -1677,7 +1715,7 @@
         async function toggleFlipCam() {
             if (!groupLocalStream) return;
             currentFacingMode = (currentFacingMode === 'user') ? 'environment' : 'user';
-            
+
             const videoTrack = groupLocalStream.getVideoTracks()[0];
             if (videoTrack) videoTrack.stop();
 
@@ -1820,7 +1858,6 @@
             if (card) card.remove();
         });
 
-        // --- ОБЫЧНЫЙ АУДИОЗВОНОК 1-НА-1 ---
         async function startDirectCall() {
             if (currentTarget.startsWith('#')) return;
             const sortedPair = [currentUser, currentTarget].sort();
@@ -1997,7 +2034,7 @@
                     startMicMeter(mediaStream);
                     socket.emit('webrtc_join', { room_id: activeRoomId, user: currentUser });
                 } catch(err) { alert('Микрофон недоступен: ' + err); isMicOn = false; }
-            } else { stopMicMeter(); btn.innerText = currentLang === 'en' ? '🔇 Mic OFF' : '🔇 Микрофон ВЫКЛ'; btn.style.background = '#c62828'; }
+            } else { stopMicMeter(); btn.innerText = currentLang === 'en' ? '🔇 Mic OFF' : '🔇 Микрофон ВЫКЛ'; btn.style.background = '#e53935'; }
         }
 
         function startMicMeter(stream) {
@@ -2145,7 +2182,7 @@
                     `;
                 } else {
                     slotDiv.className = 'table-slot';
-                    slotDiv.innerHTML = `<div class="slot-avatar" style="background:#333; color:#666;">+</div><div class="slot-name" style="color:#777;">${currentLang === 'en' ? 'Empty' : 'Свободно'}</div>`;
+                    slotDiv.innerHTML = `<div class="slot-avatar" style="background:#242f3d; color:#7f91a4;">+</div><div class="slot-name" style="color:#7f91a4;">${currentLang === 'en' ? 'Empty' : 'Свободно'}</div>`;
                 }
                 table.appendChild(slotDiv);
             }
