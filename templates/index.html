@@ -502,6 +502,7 @@
                 <button onclick="requestPushPermission()" style="margin-top:4px; padding:12px;" data-i18n="btn_push">🔔 Разрешить Push-уведомления (Фон)</button>
                 <button onclick="toggleTheme()" style="background:var(--panel-elevated); color:var(--text-color); margin-top:4px;" data-i18n="btn_theme">🌗 Сменить тему оформления</button>
                 <button onclick="openMafiaModal()" style="background:#7b1fa2; margin-top:4px; padding:12px;" data-i18n="btn_mafia">🕵️ Игра «Мафия»</button>
+                <button onclick="openRunnerModal()" style="background: linear-gradient(135deg, #0072ff, #00c6ff); margin-top:4px; padding:12px;" data-i18n="btn_runner">🏃 Кибер-Раннер (На рекорд)</button>
 
                 <hr style="border:0; border-top:1px solid var(--panel-border); margin:8px 0;">
                 <h4 style="font-size:14px; color:var(--text-muted);" data-i18n="title_change_pass">Смена пароля</h4>
@@ -567,6 +568,31 @@
         </div>
     </div>
 
+    <!-- МИНИ-ИГРА: КИБЕР-РАННЕР -->
+    <div id="runner-modal" class="modal-overlay">
+        <div class="modal-box" style="max-width: 440px;">
+            <div class="modal-header">
+                <h3>🏃 Кибер-Раннер</h3>
+                <button onclick="closeRunnerModal()" style="width:auto; padding:4px 10px; background:var(--panel-bg); margin:0;">✕</button>
+            </div>
+            <div class="modal-body" style="align-items:center; text-align:center;">
+                <div style="display:flex; justify-content:space-between; width:100%; font-size:14px; font-weight:700; padding:0 4px;">
+                    <span>SCORE: <b id="runner-score" style="color:var(--accent-bright);">0</b></span>
+                    <span>HI-SCORE: <b id="runner-best" style="color:#ff5555;">0</b></span>
+                </div>
+
+                <canvas id="runner-canvas" width="380" height="200" style="width:100%; height:200px; background:#0b1118; border:1px solid #2b5278; border-radius:14px; cursor:pointer; touch-action:none; box-shadow: 0 0 18px rgba(62, 153, 232, 0.2);"></canvas>
+
+                <p style="font-size:12px; color:var(--text-muted);">Тапай по экрану или жми <b>Пробел</b> (доступен двойной прыжок!). Собирай зелёные сферы и обходи лазеры.</p>
+
+                <div style="display:flex; gap:8px; width:100%;">
+                    <button id="runner-start-btn" onclick="startRunnerGame()" style="margin:0; background:var(--accent-bright);">▶ Старт</button>
+                    <button id="runner-share-btn" onclick="shareRunnerScore()" style="margin:0; background:#2e7d32; display:none;">📤 В чат</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- ЛАЙТБОКС -->
     <div id="lightbox" onclick="closeLightbox()">
         <img id="lightbox-img" src="" style="display:none;">
@@ -615,6 +641,7 @@
                 btn_push: "🔔 Разрешить Push-уведомления (Фон)",
                 btn_theme: "🌗 Сменить тему оформления",
                 btn_mafia: "🕵️ Игра «Мафия»",
+                btn_runner: "🏃 Кибер-Раннер (На рекорд)",
                 title_change_pass: "Смена пароля",
                 ph_old_pass: "Старый пароль",
                 ph_new_pass: "Новый пароль",
@@ -665,6 +692,7 @@
                 btn_push: "🔔 Enable Push Notifications",
                 btn_theme: "🌗 Toggle Theme",
                 btn_mafia: "🕵️ Mafia Game",
+                btn_runner: "🏃 Cyber Runner (High Score)",
                 title_change_pass: "Change Password",
                 ph_old_pass: "Current password",
                 ph_new_pass: "New password",
@@ -971,6 +999,15 @@
             const savedUser = localStorage.getItem('pychat_user');
             const savedPass = localStorage.getItem('pychat_pass');
             if (savedUser && savedPass) socket.emit('login', { username: savedUser, password: savedPass });
+
+            const rCanvas = document.getElementById('runner-canvas');
+            if (rCanvas) {
+                rCanvas.addEventListener('pointerdown', (e) => {
+                    e.preventDefault();
+                    if (!runnerRunning) startRunnerGame();
+                    else runnerJump();
+                });
+            }
         });
 
         function login() {
@@ -2232,6 +2269,277 @@
         function openProfileModal() { document.getElementById('profile-modal').style.display = 'flex'; }
         function closeProfileModal() { document.getElementById('profile-modal').style.display = 'none'; }
 
+        // ================= МИНИ-ИГРА: КИБЕР-РАННЕР =================
+        let runnerAnimId = null;
+        let runnerRunning = false;
+        let runnerScore = 0;
+        let runnerBest = parseInt(localStorage.getItem('pychat_runner_best') || '0');
+        let runnerSpeed = 4.6;
+        let runnerPlayer = { x: 48, y: 146, w: 24, h: 24, vy: 0, jumps: 0 };
+        let runnerTrail = [];
+        let runnerObstacles = [];
+        let runnerOrbs = [];
+        let runnerSpawnTimer = 0;
+        let runnerOrbTimer = 90;
+        let gridOffset = 0;
+
+        function openRunnerModal() {
+            closeProfileModal();
+            document.getElementById('runner-best').innerText = runnerBest;
+            document.getElementById('runner-modal').style.display = 'flex';
+            drawRunnerIdle();
+        }
+
+        function closeRunnerModal() {
+            runnerRunning = false;
+            if (runnerAnimId) cancelAnimationFrame(runnerAnimId);
+            document.getElementById('runner-modal').style.display = 'none';
+        }
+
+        function drawRunnerGrid(ctx, canvas) {
+            ctx.strokeStyle = 'rgba(43, 82, 120, 0.25)';
+            ctx.lineWidth = 1;
+            const step = 32;
+            for (let x = -gridOffset; x < canvas.width; x += step) {
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, 170);
+                ctx.stroke();
+            }
+            for (let y = 30; y < 170; y += step) {
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(canvas.width, y);
+                ctx.stroke();
+            }
+            // Неоновый пол
+            ctx.shadowBlur = 10;
+            ctx.shadowColor = '#3e99e8';
+            ctx.strokeStyle = '#3e99e8';
+            ctx.lineWidth = 2.5;
+            ctx.beginPath();
+            ctx.moveTo(0, 170);
+            ctx.lineTo(canvas.width, 170);
+            ctx.stroke();
+            ctx.shadowBlur = 0;
+        }
+
+        function drawRunnerIdle() {
+            const canvas = document.getElementById('runner-canvas');
+            const ctx = canvas.getContext('2d');
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            drawRunnerGrid(ctx, canvas);
+
+            ctx.shadowBlur = 12;
+            ctx.shadowColor = '#3e99e8';
+            ctx.fillStyle = '#3e99e8';
+            ctx.beginPath();
+            ctx.roundRect(48, 146, 24, 24, 5);
+            ctx.fill();
+            ctx.shadowBlur = 0;
+
+            ctx.fillStyle = '#7f91a4';
+            ctx.font = 'bold 14px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('Нажми «Старт» или тапни по полю', canvas.width / 2, 85);
+        }
+
+        function runnerJump() {
+            if (!runnerRunning) return;
+            if (runnerPlayer.jumps < 2) {
+                runnerPlayer.vy = runnerPlayer.jumps === 0 ? -10.2 : -9.0;
+                runnerPlayer.jumps++;
+            }
+        }
+
+        function startRunnerGame() {
+            runnerRunning = true;
+            runnerScore = 0;
+            runnerSpeed = 4.6;
+            runnerPlayer = { x: 48, y: 146, w: 24, h: 24, vy: 0, jumps: 0 };
+            runnerTrail = [];
+            runnerObstacles = [];
+            runnerOrbs = [];
+            runnerSpawnTimer = 45;
+            runnerOrbTimer = 80;
+
+            document.getElementById('runner-score').innerText = '0';
+            document.getElementById('runner-start-btn').innerText = '🔄 Заново';
+            document.getElementById('runner-share-btn').style.display = 'none';
+
+            if (runnerAnimId) cancelAnimationFrame(runnerAnimId);
+            runnerLoop();
+        }
+
+        function runnerLoop() {
+            if (!runnerRunning) return;
+            const canvas = document.getElementById('runner-canvas');
+            const ctx = canvas.getContext('2d');
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            gridOffset = (gridOffset + runnerSpeed * 0.5) % 32;
+            drawRunnerGrid(ctx, canvas);
+
+            // Физика игрока
+            runnerPlayer.vy += 0.55;
+            runnerPlayer.y += runnerPlayer.vy;
+            if (runnerPlayer.y >= 146) {
+                runnerPlayer.y = 146;
+                runnerPlayer.vy = 0;
+                runnerPlayer.jumps = 0;
+            }
+
+            // Пиксельный шлейф
+            runnerTrail.push({ x: runnerPlayer.x + 6, y: runnerPlayer.y + 8, alpha: 0.7 });
+            for (let i = runnerTrail.length - 1; i >= 0; i--) {
+                const t = runnerTrail[i];
+                t.x -= runnerSpeed * 0.7;
+                t.alpha -= 0.06;
+                if (t.alpha <= 0) {
+                    runnerTrail.splice(i, 1);
+                } else {
+                    ctx.fillStyle = `rgba(62, 153, 232, ${t.alpha})`;
+                    ctx.fillRect(t.x, t.y, 7, 7);
+                }
+            }
+
+            // Ускорение и очки
+            runnerSpeed += 0.002;
+            runnerScore += 0.2;
+            const displayScore = Math.floor(runnerScore);
+            document.getElementById('runner-score').innerText = displayScore;
+
+            // Спавн лазерных барьеров
+            runnerSpawnTimer--;
+            if (runnerSpawnTimer <= 0) {
+                const count = (runnerSpeed > 6.2 && Math.random() > 0.65) ? 2 : 1;
+                for (let c = 0; c < count; c++) {
+                    const h = 24 + Math.floor(Math.random() * 26);
+                    runnerObstacles.push({ x: canvas.width + 10 + c * 22, y: 170 - h, w: 14, h: h });
+                }
+                runnerSpawnTimer = Math.max(44, Math.floor(92 - runnerSpeed * 4 + Math.random() * 42));
+            }
+
+            // Спавн бонусных энерго-сфер
+            runnerOrbTimer--;
+            if (runnerOrbTimer <= 0) {
+                const orbY = 85 + Math.floor(Math.random() * 55);
+                runnerOrbs.push({ x: canvas.width + 20, y: orbY, r: 7 });
+                runnerOrbTimer = 110 + Math.floor(Math.random() * 90);
+            }
+
+            // Отрисовка куба игрока
+            ctx.shadowBlur = 14;
+            ctx.shadowColor = '#3e99e8';
+            ctx.fillStyle = '#3e99e8';
+            ctx.beginPath();
+            ctx.roundRect(runnerPlayer.x, runnerPlayer.y, runnerPlayer.w, runnerPlayer.h, 5);
+            ctx.fill();
+            ctx.shadowBlur = 0;
+
+            ctx.strokeStyle = '#90caf9';
+            ctx.lineWidth = 1.5;
+            ctx.strokeRect(runnerPlayer.x + 3, runnerPlayer.y + 3, runnerPlayer.w - 6, runnerPlayer.h - 6);
+
+            // Энерго-сферы (+25 очков)
+            for (let i = runnerOrbs.length - 1; i >= 0; i--) {
+                const orb = runnerOrbs[i];
+                orb.x -= runnerSpeed;
+
+                ctx.shadowBlur = 12;
+                ctx.shadowColor = '#4dcd5e';
+                ctx.fillStyle = '#4dcd5e';
+                ctx.beginPath();
+                ctx.arc(orb.x, orb.y, orb.r, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.shadowBlur = 0;
+
+                const dx = (runnerPlayer.x + runnerPlayer.w / 2) - orb.x;
+                const dy = (runnerPlayer.y + runnerPlayer.h / 2) - orb.y;
+                if (Math.hypot(dx, dy) < orb.r + 14) {
+                    runnerScore += 25;
+                    runnerOrbs.splice(i, 1);
+                    continue;
+                }
+                if (orb.x + orb.r < 0) runnerOrbs.splice(i, 1);
+            }
+
+            // Красные неоновые барьеры
+            for (let i = runnerObstacles.length - 1; i >= 0; i--) {
+                const obs = runnerObstacles[i];
+                obs.x -= runnerSpeed;
+
+                ctx.shadowBlur = 12;
+                ctx.shadowColor = '#ff3b30';
+                ctx.strokeStyle = '#ff3b30';
+                ctx.lineWidth = 2.5;
+                ctx.fillStyle = 'rgba(229, 57, 53, 0.22)';
+                ctx.beginPath();
+                ctx.roundRect(obs.x, obs.y, obs.w, obs.h, 3);
+                ctx.fill();
+                ctx.stroke();
+                ctx.shadowBlur = 0;
+
+                if (
+                    runnerPlayer.x + 4 < obs.x + obs.w &&
+                    runnerPlayer.x + runnerPlayer.w - 4 > obs.x &&
+                    runnerPlayer.y + 4 < obs.y + obs.h &&
+                    runnerPlayer.y + runnerPlayer.h > obs.y
+                ) {
+                    gameOverRunner(Math.floor(runnerScore), ctx, canvas);
+                    return;
+                }
+                if (obs.x + obs.w < 0) runnerObstacles.splice(i, 1);
+            }
+
+            runnerAnimId = requestAnimationFrame(runnerLoop);
+        }
+
+        function gameOverRunner(finalScore, ctx, canvas) {
+            runnerRunning = false;
+            if (finalScore > runnerBest) {
+                runnerBest = finalScore;
+                localStorage.setItem('pychat_runner_best', runnerBest);
+                document.getElementById('runner-best').innerText = runnerBest;
+            }
+
+            ctx.fillStyle = 'rgba(11, 17, 24, 0.82)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            ctx.fillStyle = '#ff5555';
+            ctx.font = 'bold 20px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('GAME OVER', canvas.width / 2, 84);
+
+            ctx.fillStyle = '#ffffff';
+            ctx.font = '14px sans-serif';
+            ctx.fillText(`SCORE: ${finalScore}  |  HI-SCORE: ${runnerBest}`, canvas.width / 2, 114);
+
+            document.getElementById('runner-share-btn').style.display = 'inline-block';
+        }
+
+        function shareRunnerScore() {
+            const sc = document.getElementById('runner-score').innerText;
+            const msgText = `🏃 Кибер-Раннер: набрал ${sc} очков! (HI-SCORE: ${runnerBest}) 🏆`;
+            socket.emit('send_msg', {
+                sender: currentUser,
+                target: currentTarget,
+                msg: msgText,
+                msg_type: 'text',
+                ttl: 0
+            });
+            closeRunnerModal();
+        }
+
+        document.addEventListener('keydown', (e) => {
+            if (e.code === 'Space' && document.getElementById('runner-modal').style.display === 'flex') {
+                e.preventDefault();
+                if (!runnerRunning) startRunnerGame();
+                else runnerJump();
+            }
+        });
+
+        // ================= АВТОСИНХРОНИЗАЦИЯ СОКЕТА НА ТЕЛЕФОНЕ =================
         socket.on('connect', () => {
             if (currentUser) {
                 socket.emit('get_users');
