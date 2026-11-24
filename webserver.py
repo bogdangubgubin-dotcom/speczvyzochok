@@ -64,8 +64,10 @@ def init_db():
                 last_seen BIGINT DEFAULT 0
             );
         """)
+        conn.commit()
         try:
             cur.execute("ALTER TABLE users ADD COLUMN language VARCHAR(10) DEFAULT 'ru';")
+            conn.commit()
         except Exception:
             conn.rollback()
 
@@ -160,7 +162,7 @@ def init_db():
 
     conn.commit()
     conn.close()
-
+    
 init_db()
 
 def hash_password(password, salt=None):
