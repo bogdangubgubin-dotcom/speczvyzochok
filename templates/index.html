@@ -110,8 +110,9 @@
         .call-card-btns { display: flex; gap: 10px; margin-top: 10px; justify-content: center; }
         .call-card-btns button { width: auto; padding: 7px 16px; font-size: 13px; margin: 0; border-radius: 10px; }
 
-        .video-note-wrap { position: relative; width: 175px; height: 175px; border-radius: 16px; overflow: hidden; border: 2px solid var(--panel-elevated); background: #000; }
+        .video-note-wrap { position: relative; width: 180px; height: 180px; border-radius: 18px; overflow: hidden; border: 2px solid var(--accent-bright); background: #000; }
         .video-note { width: 100%; height: 100%; object-fit: cover; display: block; background: #000; cursor: pointer; }
+        .video-note-badge { position: absolute; top: 6px; right: 6px; background: rgba(0,0,0,0.6); color: #fff; font-size: 10px; padding: 2px 6px; border-radius: 8px; pointer-events: none; }
 
         .msg-status { font-size: 11px; align-self: flex-end; margin-top: 1px; opacity: 0.85; }
         .msg-me .msg-status { color: #7cc4fa; }
@@ -297,7 +298,7 @@
             #sidebar { position: fixed; left: 0; top: 0; bottom: 0; width: 80%; max-width: 280px; transform: translateX(-100%); }
             #sidebar.open { transform: translateX(0); }
             .poker-table { grid-template-columns: repeat(2, 1fr); border-radius: 30px; }
-            .video-note-wrap { width: 150px; height: 150px; }
+            .video-note-wrap { width: 155px; height: 155px; }
             .icon-btn { width: 32px; height: 32px; font-size: 15px; }
             footer button#send-btn { width: 34px; height: 34px; font-size: 15px; }
         }
@@ -465,7 +466,8 @@
             <div class="modal-body" style="text-align:center;">
                 <div id="info-user-avatar" class="big-avatar" style="margin: 0 auto 10px auto;">?</div>
                 <h3 id="info-user-name">...</h3>
-                <p id="info-user-role" style="font-size:12px; color:var(--accent-bright); margin-bottom:10px;">User</p>
+                <p id="info-user-role" style="font-size:12px; color:var(--accent-bright); margin-bottom:4px;">User</p>
+                <p id="info-user-region" style="font-size:13px; color:var(--text-muted); margin-bottom:10px;">🌐 Авто</p>
                 <button id="info-pm-btn" data-i18n="btn_write_pm">💬 Написать в личку</button>
             </div>
         </div>
@@ -488,13 +490,15 @@
                 </div>
 
                 <div class="region-select-box">
-                    <label for="regionSelect" data-i18n="label_region">🌍 Регион подключения (Сервер):</label>
+                    <label for="regionSelect" data-i18n="label_region">🌍 Страна / Регион в профиле:</label>
                     <select id="regionSelect" onchange="changeRegion(this.value)">
-                        <option value="auto" data-i18n="reg_auto">🌐 Авто (Оптимальный)</option>
-                        <option value="eu" data-i18n="reg_eu">🇪🇺 Европа (Frankfurt / EU)</option>
-                        <option value="ua" data-i18n="reg_ua">🇺🇦 Украина / Восточная Европа</option>
-                        <option value="us" data-i18n="reg_us">🇺🇸 США (US-East)</option>
-                        <option value="asia" data-i18n="reg_asia">🇸🇬 Азия (Singapore)</option>
+                        <option value="auto" data-i18n="reg_auto">🌐 Не указана (Авто)</option>
+                        <option value="ua" data-i18n="reg_ua">🇺🇦 Украина</option>
+                        <option value="eu" data-i18n="reg_eu">🇪🇺 Европа (EU)</option>
+                        <option value="pl" data-i18n="reg_pl">🇵🇱 Польша</option>
+                        <option value="de" data-i18n="reg_de">🇩🇪 Германия</option>
+                        <option value="us" data-i18n="reg_us">🇺🇸 США</option>
+                        <option value="asia" data-i18n="reg_asia">🇸🇬 Азия</option>
                     </select>
                 </div>
 
@@ -606,6 +610,16 @@
         let currentLang = localStorage.getItem('pychat_lang') || 'ru';
         let currentRegion = localStorage.getItem('pychat_region') || 'auto';
 
+        const regionLabels = {
+            auto: { ru: "🌐 Страна не указана", en: "🌐 Country not set" },
+            ua:   { ru: "🇺🇦 Украина", en: "🇺🇦 Ukraine" },
+            eu:   { ru: "🇪🇺 Европа (EU)", en: "🇪🇺 Europe (EU)" },
+            pl:   { ru: "🇵🇱 Польша", en: "🇵🇱 Poland" },
+            de:   { ru: "🇩🇪 Германия", en: "🇩🇪 Germany" },
+            us:   { ru: "🇺🇸 США", en: "🇺🇸 USA" },
+            asia: { ru: "🇸🇬 Азия", en: "🇸🇬 Asia" }
+        };
+
         const i18n = {
             ru: {
                 ph_login: "Логин",
@@ -632,12 +646,14 @@
                 btn_write_pm: "💬 Написать в личку",
                 title_profile: "👤 Настройки Профиля",
                 btn_change_avatar: "📷 Изменить аватарку",
-                label_region: "🌍 Регион подключения (Сервер):",
-                reg_auto: "🌐 Авто (Оптимальный)",
-                reg_eu: "🇪🇺 Европа (Frankfurt / EU)",
-                reg_ua: "🇺🇦 Украина / Восточная Европа",
-                reg_us: "🇺🇸 США (US-East)",
-                reg_asia: "🇸🇬 Азия (Singapore)",
+                label_region: "🌍 Страна / Регион в профиле:",
+                reg_auto: "🌐 Не указана (Авто)",
+                reg_ua: "🇺🇦 Украина",
+                reg_eu: "🇪🇺 Европа (EU)",
+                reg_pl: "🇵🇱 Польша",
+                reg_de: "🇩🇪 Германия",
+                reg_us: "🇺🇸 США",
+                reg_asia: "🇸🇬 Азия",
                 btn_push: "🔔 Разрешить Push-уведомления (Фон)",
                 btn_theme: "🌗 Сменить тему оформления",
                 btn_mafia: "🕵️ Игра «Мафия»",
@@ -683,12 +699,14 @@
                 btn_write_pm: "💬 Send Message",
                 title_profile: "👤 Profile Settings",
                 btn_change_avatar: "📷 Change Avatar",
-                label_region: "🌍 Connection Region (Server):",
-                reg_auto: "🌐 Auto (Optimal)",
-                reg_eu: "🇪🇺 Europe (Frankfurt / EU)",
-                reg_ua: "🇺🇦 Ukraine / Eastern Europe",
-                reg_us: "🇺🇸 USA (US-East)",
-                reg_asia: "🇸🇬 Asia (Singapore)",
+                label_region: "🌍 Country / Region in Profile:",
+                reg_auto: "🌐 Not specified (Auto)",
+                reg_ua: "🇺🇦 Ukraine",
+                reg_eu: "🇪🇺 Europe (EU)",
+                reg_pl: "🇵🇱 Poland",
+                reg_de: "🇩🇪 Germany",
+                reg_us: "🇺🇸 USA",
+                reg_asia: "🇸🇬 Asia",
                 btn_push: "🔔 Enable Push Notifications",
                 btn_theme: "🌗 Toggle Theme",
                 btn_mafia: "🕵️ Mafia Game",
@@ -711,9 +729,22 @@
             }
         };
 
+        function escapeHtml(str) {
+            if (!str) return '';
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+        }
+
         function changeRegion(reg) {
             currentRegion = reg;
             localStorage.setItem('pychat_region', reg);
+            if (currentUser) {
+                socket.emit('change_region', { user: currentUser, region: reg });
+            }
         }
 
         function toggleLanguage() {
@@ -750,7 +781,7 @@
             reconnectionAttempts: Infinity,
             reconnectionDelay: 1000,
             reconnectionDelayMax: 5000,
-            timeout: 20000
+            timeout: 30000
         });
 
         let currentUser = "";
@@ -773,6 +804,7 @@
         let isGroupCamOn = true;
         let currentFacingMode = 'user';
         const groupPeerConnections = {};
+        const groupIceQueues = {};
         let activeCallRoomId = "general-room";
 
         let mediaRecorder = null;
@@ -784,6 +816,7 @@
         let activeReplyMsg = null;
         let allLoadedMessages = {};
         let userAvatarsMap = {};
+        let userProfilesMap = {};
         let pinnedChats = JSON.parse(localStorage.getItem('pychat_pinned') || '[]');
         let unreadCounts = {};
         let typingTimeout = null;
@@ -793,13 +826,36 @@
         let directCallStream = null;
         let incomingCallData = null;
         let isVideoCallMode = false;
+        let directIceQueue = [];
 
         const VAPID_PUBLIC_KEY = "{{ vapid_public_key }}";
 
+        // STUN + бесплатные публичные TURN-серверы OpenRelay (Metered) для пробития 4G и международных границ
         const iceServers = {
             iceServers: [
                 { urls: 'stun:stun.l.google.com:19302' },
-                { urls: 'stun:stun1.l.google.com:19302' }
+                { urls: 'stun:stun1.l.google.com:19302' },
+                { urls: 'stun:stun.relay.metered.ca:80' },
+                {
+                    urls: 'turn:global.relay.metered.ca:80',
+                    username: 'e8dd65b92f6dde4315b09333',
+                    credential: 'uWdWNmkhvyqTEAcO'
+                },
+                {
+                    urls: 'turn:global.relay.metered.ca:80?transport=tcp',
+                    username: 'e8dd65b92f6dde4315b09333',
+                    credential: 'uWdWNmkhvyqTEAcO'
+                },
+                {
+                    urls: 'turn:global.relay.metered.ca:443',
+                    username: 'e8dd65b92f6dde4315b09333',
+                    credential: 'uWdWNmkhvyqTEAcO'
+                },
+                {
+                    urls: 'turns:global.relay.metered.ca:443?transport=tcp',
+                    username: 'e8dd65b92f6dde4315b09333',
+                    credential: 'uWdWNmkhvyqTEAcO'
+                }
             ]
         };
 
@@ -993,12 +1049,17 @@
         }
 
         window.addEventListener('DOMContentLoaded', () => {
+            // Удаляем старый незащищённый пароль из localStorage, если он там оставался
+            localStorage.removeItem('pychat_pass');
+
             const regSel = document.getElementById('regionSelect');
             if (regSel) regSel.value = currentRegion;
             applyLanguage(currentLang);
-            const savedUser = localStorage.getItem('pychat_user');
-            const savedPass = localStorage.getItem('pychat_pass');
-            if (savedUser && savedPass) socket.emit('login', { username: savedUser, password: savedPass });
+
+            const savedToken = localStorage.getItem('pychat_token');
+            if (savedToken) {
+                socket.emit('login_token', { token: savedToken });
+            }
 
             const rCanvas = document.getElementById('runner-canvas');
             if (rCanvas) {
@@ -1022,14 +1083,29 @@
             if (u && p) socket.emit('register', { username: u, password: p });
         }
 
-        function logout() { localStorage.clear(); location.reload(); }
+        function logout() {
+            const tok = localStorage.getItem('pychat_token');
+            if (tok) socket.emit('logout_token', { token: tok });
+            localStorage.removeItem('pychat_token');
+            localStorage.removeItem('pychat_user');
+            localStorage.removeItem('pychat_pass');
+            location.reload();
+        }
+
+        socket.on('session_expired', () => {
+            localStorage.removeItem('pychat_token');
+            localStorage.removeItem('pychat_user');
+        });
 
         socket.on('auth_response', (data) => {
             if (data.status === 'ok') {
                 currentUser = data.username;
                 userRole = data.role;
                 localStorage.setItem('pychat_user', currentUser);
-                localStorage.setItem('pychat_pass', document.getElementById('password').value || localStorage.getItem('pychat_pass'));
+                if (data.token) {
+                    localStorage.setItem('pychat_token', data.token);
+                }
+                document.getElementById('password').value = '';
                 document.getElementById('auth-screen').style.display = 'none';
                 document.getElementById('app-screen').style.display = 'flex';
                 document.getElementById('user-display').innerText = currentUser;
@@ -1037,6 +1113,12 @@
                 if (data.language) {
                     currentLang = data.language;
                     localStorage.setItem('pychat_lang', currentLang);
+                }
+                if (data.region) {
+                    currentRegion = data.region;
+                    localStorage.setItem('pychat_region', currentRegion);
+                    const regSel = document.getElementById('regionSelect');
+                    if (regSel) regSel.value = currentRegion;
                 }
                 applyLanguage(currentLang);
 
@@ -1118,6 +1200,7 @@
             document.getElementById('chat-title').innerText = isGroup ? target : (target === currentUser ? '📁 ' + savedTitle : '@' + target);
             document.getElementById('call-btn').style.display = (!isGroup && target !== currentUser) ? 'inline-block' : 'none';
             document.getElementById('group-call-btn').style.display = (target !== currentUser) ? 'inline-flex' : 'none';
+            document.getElementById('user-last-seen').innerText = '';
             document.getElementById('messages').innerHTML = '';
             closeSidebar();
             socket.emit('load_history', { user: currentUser, target: currentTarget });
@@ -1170,10 +1253,11 @@
                 const unread = unreadCounts[ch.name] || 0;
                 const div = document.createElement('div');
                 div.className = 'chat-item' + (ch.name === currentTarget ? ' active' : '') + (isPinned ? ' pinned-chat' : '');
+                const safeName = escapeHtml(ch.name);
                 div.innerHTML = `
-                    <span>${ch.name}</span>
+                    <span>${safeName}</span>
                     ${unread > 0 ? `<span class="unread-badge">${unread}</span>` : ''}
-                    <button onclick="event.stopPropagation(); togglePinChat('${ch.name}')" style="width:auto; background:transparent; padding:0; border:none; font-size:12px; margin-left:4px;">📌</button>
+                    <button onclick="event.stopPropagation(); togglePinChat('${safeName}')" style="width:auto; background:transparent; padding:0; border:none; font-size:12px; margin-left:4px;">📌</button>
                 `;
                 div.onclick = () => switchChat(ch.name);
                 list.appendChild(div);
@@ -1195,10 +1279,22 @@
 
             sortedUsers.forEach(u => {
                 if (u.avatar) userAvatarsMap[u.username] = u.avatar;
+                userProfilesMap[u.username] = {
+                    role: u.role || 'user',
+                    region: u.region || 'auto',
+                    language: u.language || 'ru',
+                    online: u.online,
+                    last_seen: u.last_seen
+                };
+
                 if (u.username === currentUser) return;
 
                 if (u.username === currentTarget) {
-                    const statusText = u.online ? (currentLang === 'en' ? '🟢 Online' : '🟢 В сети') : ((currentLang === 'en' ? 'Last seen: ' : 'Был(а) в сети: ') + (u.last_seen ? new Date(u.last_seen * 1000).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : 'recently'));
+                    const regObj = regionLabels[u.region || 'auto'] || regionLabels.auto;
+                    const regStr = regObj[currentLang] || regObj.ru;
+                    const statusText = u.online
+                        ? (currentLang === 'en' ? `🟢 Online • ${regStr}` : `🟢 В сети • ${regStr}`)
+                        : ((currentLang === 'en' ? 'Last seen: ' : 'Был(а): ') + (u.last_seen ? new Date(u.last_seen * 1000).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : 'recently') + ` • ${regStr}`);
                     document.getElementById('user-last-seen').innerText = statusText;
                 }
 
@@ -1210,13 +1306,14 @@
                 avDiv.className = 'avatar';
                 setAvatarElement(avDiv, u.username);
 
+                const safeUser = escapeHtml(u.username);
                 div.appendChild(avDiv);
-                div.innerHTML += `
-                    <span>${u.username}</span>
+                div.insertAdjacentHTML('beforeend', `
+                    <span>${safeUser}</span>
                     <span class="status-dot ${u.online ? 'online' : 'offline'}"></span>
                     ${unread > 0 ? `<span class="unread-badge">${unread}</span>` : ''}
-                    <button onclick="event.stopPropagation(); togglePinChat('${u.username}')" style="width:auto; background:transparent; padding:0; border:none; font-size:12px; margin-left:4px;">📌</button>
-                `;
+                    <button onclick="event.stopPropagation(); togglePinChat('${safeUser}')" style="width:auto; background:transparent; padding:0; border:none; font-size:12px; margin-left:4px;">📌</button>
+                `);
                 div.onclick = () => switchChat(u.username);
                 list.appendChild(div);
             });
@@ -1225,6 +1322,14 @@
         function openUserInfoModal(uname) {
             document.getElementById('info-user-name').innerText = uname;
             setAvatarElement(document.getElementById('info-user-avatar'), uname);
+
+            const prof = userProfilesMap[uname] || { role: 'user', region: 'auto' };
+            document.getElementById('info-user-role').innerText = prof.role === 'admin' ? '👑 Admin' : 'User';
+
+            const regKey = (uname === currentUser) ? currentRegion : (prof.region || 'auto');
+            const regObj = regionLabels[regKey] || regionLabels.auto;
+            document.getElementById('info-user-region').innerText = regObj[currentLang] || regObj.ru;
+
             document.getElementById('info-pm-btn').onclick = () => {
                 closeUserInfoModal();
                 switchChat(uname);
@@ -1241,11 +1346,12 @@
                 if (msg.msg_type === 'file') {
                     try {
                         const fileData = JSON.parse(msg.msg);
+                        const imgSrc = fileData.url ? fileData.url : `data:image/jpeg;base64,${fileData.data}`;
                         if (/\.(jpg|jpeg|png|gif|webp)$/i.test(fileData.name)) {
                             const item = document.createElement('div');
                             item.className = 'media-grid-item';
-                            item.style.backgroundImage = `url('data:image/jpeg;base64,${fileData.data}')`;
-                            item.onclick = () => openLightbox(`data:image/jpeg;base64,${fileData.data}`);
+                            item.style.backgroundImage = `url('${imgSrc}')`;
+                            item.onclick = () => openLightbox(imgSrc);
                             container.appendChild(item);
                         }
                     } catch(e){}
@@ -1268,13 +1374,14 @@
             data.users.forEach(u => {
                 const row = document.createElement('div');
                 row.className = 'admin-user-row';
+                const safeU = escapeHtml(u.username);
                 row.innerHTML = `
-                    <div><b>${u.username}</b> <span style="font-size:11px; color:var(--text-muted);">(${u.role})</span></div>
+                    <div><b>${safeU}</b> <span style="font-size:11px; color:var(--text-muted);">(${escapeHtml(u.role)})</span></div>
                     <div style="display:flex; gap:6px;">
-                        <button onclick="adminSetRole('${u.username}', '${u.role === 'admin' ? 'user' : 'admin'}')" style="width:auto; padding:4px 8px; font-size:11px; margin:0;">
+                        <button onclick="adminSetRole('${safeU}', '${u.role === 'admin' ? 'user' : 'admin'}')" style="width:auto; padding:4px 8px; font-size:11px; margin:0;">
                             ${u.role === 'admin' ? 'User' : 'Admin'}
                         </button>
-                        ${u.username !== currentUser ? `<button onclick="adminDeleteUser('${u.username}')" style="width:auto; padding:4px 8px; font-size:11px; background:#e53935; margin:0;">Удалить</button>` : ''}
+                        ${u.username !== currentUser ? `<button onclick="adminDeleteUser('${safeU}')" style="width:auto; padding:4px 8px; font-size:11px; background:#e53935; margin:0;">Удалить</button>` : ''}
                     </div>
                 `;
                 container.appendChild(row);
@@ -1298,8 +1405,8 @@
             st.innerText = data.message;
             st.style.color = data.status === 'ok' ? '#4dcd5e' : '#ff5555';
             if (data.status === 'ok') {
-                localStorage.setItem('pychat_pass', document.getElementById('new-pass').value.trim());
-                document.getElementById('old-pass').value = ''; document.getElementById('new-pass').value = '';
+                document.getElementById('old-pass').value = '';
+                document.getElementById('new-pass').value = '';
             }
         });
 
@@ -1398,15 +1505,35 @@
             document.getElementById('reply-bar').style.display = 'none';
         }
 
+        async function uploadMediaOrFallback(dataUri, resourceType) {
+            try {
+                const resp = await fetch('/upload_media', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ data_uri: dataUri, resource_type: resourceType })
+                });
+                const res = await resp.json();
+                if (res.status === 'ok' && res.url) return res.url;
+            } catch (e) {}
+            return null;
+        }
+
         function sendFile() {
             const file = document.getElementById('file-input').files[0];
             if (!file) return;
             const reader = new FileReader();
-            reader.onload = function(e) {
-                const b64Data = e.target.result.split(',')[1];
+            reader.onload = async function(e) {
+                const dataUri = e.target.result;
+                const cloudUrl = await uploadMediaOrFallback(dataUri, 'auto');
+                const payloadObj = cloudUrl
+                    ? { name: file.name, url: cloudUrl }
+                    : { name: file.name, data: dataUri.split(',')[1] };
+
                 socket.emit('send_msg', {
-                    sender: currentUser, target: currentTarget,
-                    msg: JSON.stringify({ name: file.name, data: b64Data }), msg_type: 'file'
+                    sender: currentUser,
+                    target: currentTarget,
+                    msg: JSON.stringify(payloadObj),
+                    msg_type: 'file'
                 });
                 document.getElementById('file-input').value = '';
             };
@@ -1422,7 +1549,10 @@
         }
 
         function getSupportedVideoMime() {
-            const types = ['video/mp4', 'video/mp4;codecs=h264,aac', 'video/webm;codecs=vp8,opus', 'video/webm'];
+            const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+            const types = isIOS
+                ? ['video/mp4', 'video/mp4;codecs=avc1,mp4a.40.2', 'video/webm']
+                : ['video/webm;codecs=vp8,opus', 'video/webm', 'video/mp4'];
             for (const t of types) {
                 if (window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(t)) return t;
             }
@@ -1431,13 +1561,14 @@
 
         function base64ToBlobUrl(b64Data, mimeType) {
             try {
+                const cleanMime = (mimeType || 'video/mp4').split(';')[0];
                 const byteChars = atob(b64Data);
                 const byteNumbers = new Array(byteChars.length);
                 for (let i = 0; i < byteChars.length; i++) {
                     byteNumbers[i] = byteChars.charCodeAt(i);
                 }
                 const byteArray = new Uint8Array(byteNumbers);
-                const blob = new Blob([byteArray], { type: mimeType });
+                const blob = new Blob([byteArray], { type: cleanMime });
                 return URL.createObjectURL(blob);
             } catch (e) {
                 return `data:${mimeType};base64,${b64Data}`;
@@ -1454,20 +1585,27 @@
                     audioChunks = [];
                     mediaRecorder.ondataavailable = e => { if (e.data && e.data.size > 0) audioChunks.push(e.data); };
                     mediaRecorder.onstop = () => {
-                        const actualMime = mediaRecorder.mimeType || mimeType || 'audio/mp4';
+                        const actualMime = (mediaRecorder.mimeType || mimeType || 'audio/mp4').split(';')[0];
                         const audioBlob = new Blob(audioChunks, { type: actualMime });
                         const reader = new FileReader();
-                        reader.onloadend = () => {
-                            const b64 = reader.result.split(',')[1];
+                        reader.onloadend = async () => {
+                            const dataUri = reader.result;
+                            const cloudUrl = await uploadMediaOrFallback(dataUri, 'video');
+                            const payloadObj = cloudUrl
+                                ? { url: cloudUrl, mime: actualMime }
+                                : { data: dataUri.split(',')[1], mime: actualMime };
+
                             socket.emit('send_msg', {
-                                sender: currentUser, target: currentTarget,
-                                msg: JSON.stringify({ data: b64, mime: actualMime }), msg_type: 'voice'
+                                sender: currentUser,
+                                target: currentTarget,
+                                msg: JSON.stringify(payloadObj),
+                                msg_type: 'voice'
                             });
                         };
                         reader.readAsDataURL(audioBlob);
                         stream.getTracks().forEach(t => t.stop());
                     };
-                    mediaRecorder.start();
+                    mediaRecorder.start(250);
                     isRecording = true;
                     btn.classList.add('recording');
                 } catch (err) { alert('Микрофон недоступен: ' + err); }
@@ -1491,20 +1629,28 @@
                     videoChunks = [];
                     videoRecorder.ondataavailable = e => { if (e.data && e.data.size > 0) videoChunks.push(e.data); };
                     videoRecorder.onstop = () => {
-                        const actualMime = videoRecorder.mimeType || mimeType || 'video/mp4';
+                        const actualMime = (videoRecorder.mimeType || mimeType || 'video/mp4').split(';')[0];
                         const videoBlob = new Blob(videoChunks, { type: actualMime });
                         const reader = new FileReader();
-                        reader.onloadend = () => {
-                            const b64 = reader.result.split(',')[1];
+                        reader.onloadend = async () => {
+                            const dataUri = reader.result;
+                            const cloudUrl = await uploadMediaOrFallback(dataUri, 'video');
+                            const payloadObj = cloudUrl
+                                ? { url: cloudUrl, mime: actualMime }
+                                : { data: dataUri.split(',')[1], mime: actualMime };
+
                             socket.emit('send_msg', {
-                                sender: currentUser, target: currentTarget,
-                                msg: JSON.stringify({ data: b64, mime: actualMime }), msg_type: 'video_note'
+                                sender: currentUser,
+                                target: currentTarget,
+                                msg: JSON.stringify(payloadObj),
+                                msg_type: 'video_note'
                             });
                         };
                         reader.readAsDataURL(videoBlob);
                         stream.getTracks().forEach(t => t.stop());
                     };
-                    videoRecorder.start();
+                    // timeslice=250ms обязателен для Safari iOS, иначе чанки могут не записаться
+                    videoRecorder.start(250);
                     isVideoRecording = true;
                     btn.classList.add('recording');
                 } catch (err) { alert('Камера/микрофон недоступны: ' + err); }
@@ -1577,6 +1723,8 @@
                 const isIncoming = msg.target === currentUser;
                 const isVid = msg.isVideo === true;
                 const iconCall = isVid ? '📹' : '📞';
+                const safeSender = escapeHtml(msg.sender);
+                const safeTarget = escapeHtml(msg.target);
                 const incTitle = isVid
                     ? (currentLang === 'en' ? 'Incoming video call from @' : 'Входящий видеозвонок от @')
                     : (currentLang === 'en' ? 'Incoming call from @' : 'Входящий звонок от @');
@@ -1591,12 +1739,12 @@
                 div.innerHTML = `
                     <div style="font-size: 24px; margin-bottom: 5px;">${iconCall}</div>
                     <div style="font-weight: bold; font-size: 14px; margin-bottom: 4px;">
-                        ${isIncoming ? incTitle + msg.sender : outTitle + msg.target}
+                        ${isIncoming ? incTitle + safeSender : outTitle + safeTarget}
                     </div>
                     <div style="font-size: 12px; color: var(--text-muted);">${isIncoming ? incSub : outSub}</div>
                     ${isIncoming ? `
                         <div class="call-card-btns">
-                            <button style="background: #2e7d32;" onclick="acceptCallFromCard('${msg.sender}', '${msg.roomId || ''}', ${isVid})">${btnAcceptTxt}</button>
+                            <button style="background: #2e7d32;" onclick="acceptCallFromCard('${safeSender}', '${escapeHtml(msg.roomId || '')}', ${isVid})">${btnAcceptTxt}</button>
                             <button style="background: #e53935;" onclick="endCall()">${btnDeclineTxt}</button>
                         </div>
                     ` : `
@@ -1621,40 +1769,47 @@
                 attachSwipeToMessage(div, msg.id);
             }
 
-            let replyHtml = msg.reply_text ? `<div class="reply-preview-box">${msg.reply_text}</div>` : '';
-            let contentHtml = `<span>${msg.msg}</span>`;
+            let replyHtml = msg.reply_text ? `<div class="reply-preview-box">${escapeHtml(msg.reply_text)}</div>` : '';
+            let contentHtml = `<span>${escapeHtml(msg.msg)}</span>`;
+
             if (msg.msg_type === 'file') {
                 try {
                     const fileData = JSON.parse(msg.msg);
+                    const fileUrl = fileData.url ? fileData.url : `data:application/octet-stream;base64,${fileData.data}`;
+                    const imgUrl = fileData.url ? fileData.url : `data:image/jpeg;base64,${fileData.data}`;
                     if (/\.(jpg|jpeg|png|gif|webp)$/i.test(fileData.name)) {
-                        contentHtml = `<img src="data:image/jpeg;base64,${fileData.data}" style="max-width:190px; border-radius:10px; cursor:pointer;" onclick="openLightbox(this.src)">`;
+                        contentHtml = `<img src="${imgUrl}" style="max-width:190px; border-radius:10px; cursor:pointer;" onclick="openLightbox(this.src)">`;
                     } else {
-                        contentHtml = `<a href="data:application/octet-stream;base64,${fileData.data}" download="${fileData.name}" style="color:inherit;">📁 ${fileData.name}</a>`;
+                        contentHtml = `<a href="${fileUrl}" download="${escapeHtml(fileData.name)}" target="_blank" style="color:inherit;">📁 ${escapeHtml(fileData.name)}</a>`;
                     }
                 } catch(e) {}
             } else if (msg.msg_type === 'voice') {
-                let rawB64 = msg.msg;
-                let mime = 'audio/mp4';
+                let mediaSrc = '';
                 try {
                     const parsed = JSON.parse(msg.msg);
-                    if (parsed && parsed.data) { rawB64 = parsed.data; mime = parsed.mime || 'audio/mp4'; }
-                } catch(e) { mime = 'audio/webm'; }
-                const blobUrl = base64ToBlobUrl(rawB64, mime);
-                contentHtml = `<audio controls playsinline preload="metadata" src="${blobUrl}" style="height:34px; width:185px;"></audio>`;
+                    if (parsed && parsed.url) mediaSrc = parsed.url;
+                    else if (parsed && parsed.data) mediaSrc = base64ToBlobUrl(parsed.data, parsed.mime || 'audio/mp4');
+                } catch(e) {
+                    mediaSrc = base64ToBlobUrl(msg.msg, 'audio/webm');
+                }
+                contentHtml = `<audio controls playsinline preload="metadata" src="${mediaSrc}" style="height:34px; width:190px;"></audio>`;
             } else if (msg.msg_type === 'video_note') {
-                let rawB64 = msg.msg;
-                let mime = 'video/mp4';
+                let mediaSrc = '';
                 try {
                     const parsed = JSON.parse(msg.msg);
-                    if (parsed && parsed.data) { rawB64 = parsed.data; mime = parsed.mime || 'video/mp4'; }
-                } catch(e) { mime = 'video/webm'; }
-                const blobUrl = base64ToBlobUrl(rawB64, mime);
+                    if (parsed && parsed.url) mediaSrc = parsed.url;
+                    else if (parsed && parsed.data) mediaSrc = base64ToBlobUrl(parsed.data, parsed.mime || 'video/mp4');
+                } catch(e) {
+                    mediaSrc = base64ToBlobUrl(msg.msg, 'video/mp4');
+                }
+                // Без #t=0.001 для blob: ссылок (на iOS Safari это ломает загрузку кадра)
                 contentHtml = `
                     <div class="video-note-wrap">
-                        <video class="video-note" controls playsinline webkit-playsinline preload="metadata" muted src="${blobUrl}#t=0.001" onclick="event.stopPropagation(); openVideoLightbox('${blobUrl}')"></video>
+                        <video class="video-note" controls playsinline webkit-playsinline preload="auto" muted src="${mediaSrc}" onclick="event.stopPropagation(); openVideoLightbox('${mediaSrc}')"></video>
+                        <span class="video-note-badge">📹</span>
                     </div>`;
             } else if (msg.msg_type === 'sticker') {
-                contentHtml = `<img src="${msg.msg}" class="sticker-img">`;
+                contentHtml = `<img src="${escapeHtml(msg.msg)}" class="sticker-img">`;
             }
 
             let ttlBadge = msg.ttl > 0 ? `<span style="font-size:10px; color:#ff9800;"> 💣 (${msg.ttl}s)</span>` : '';
@@ -1665,7 +1820,7 @@
             try { reactionsObj = JSON.parse(msg.reactions || '{}'); } catch(e){}
             let reactionsHtml = '';
             for (const [emoji, users] of Object.entries(reactionsObj)) {
-                if (users.length > 0) reactionsHtml += `<span class="reaction-item" onclick="addReaction(${msg.id}, '${emoji}')">${emoji} ${users.length}</span>`;
+                if (users.length > 0) reactionsHtml += `<span class="reaction-item" onclick="addReaction(${msg.id}, '${escapeHtml(emoji)}')">${escapeHtml(emoji)} ${users.length}</span>`;
             }
 
             let deleteBtn = (!msg.is_temp && (isMe || userRole === 'admin')) ? `<button class="action-btn" onclick="deleteMessage(${msg.id})">🗑️</button>` : '';
@@ -1674,7 +1829,8 @@
             const avatarUrl = userAvatarsMap[msg.sender];
             let msgAvStyle = (avatarUrl && avatarUrl.length > 10) ? `background-image:url('${avatarUrl}')` : `background-color:${getAvatarColor(msg.sender)}`;
 
-            const senderLabel = isMe ? (currentLang === 'en' ? 'You' : 'Вы') : msg.sender;
+            const safeSender = escapeHtml(msg.sender);
+            const senderLabel = isMe ? (currentLang === 'en' ? 'You' : 'Вы') : safeSender;
 
             let actionsHtml = msg.is_temp ? '' : `
                 <div class="msg-actions">
@@ -1691,8 +1847,8 @@
                 ${actionsHtml}
                 ${replyHtml}
                 <div class="msg-header">
-                    <span class="msg-avatar" style="${msgAvStyle}" onclick="openUserInfoModal('${msg.sender}')"></span>
-                    <span onclick="openUserInfoModal('${msg.sender}')" style="cursor:pointer;">${senderLabel}${ttlBadge}</span>
+                    <span class="msg-avatar" style="${msgAvStyle}" onclick="openUserInfoModal('${safeSender}')"></span>
+                    <span onclick="openUserInfoModal('${safeSender}')" style="cursor:pointer;">${senderLabel}${ttlBadge}</span>
                 </div>
                 ${contentHtml}${editBadge}
                 <div class="msg-status">${readMark}</div>
@@ -1741,6 +1897,8 @@
                 div.style.display = text.includes(query) ? 'flex' : 'none';
             });
         }
+
+        // ================= ВИДЕО И АУДИО ЗВОНКИ (С БУФЕРОМ ICE-CANDIDATE) =================
 
         async function startGroupCall() {
             if (currentTarget === currentUser) return;
@@ -1842,6 +2000,7 @@
             Object.keys(groupPeerConnections).forEach(sid => {
                 groupPeerConnections[sid].close();
                 delete groupPeerConnections[sid];
+                delete groupIceQueues[sid];
             });
 
             if (groupLocalStream) {
@@ -1875,16 +2034,25 @@
                 pc = createGroupPeer(senderSid);
                 if (groupLocalStream) groupLocalStream.getTracks().forEach(t => pc.addTrack(t, groupLocalStream));
             }
+            if (!groupIceQueues[senderSid]) groupIceQueues[senderSid] = [];
 
             if (signal.sdp) {
                 await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
+                while (groupIceQueues[senderSid].length > 0) {
+                    const cand = groupIceQueues[senderSid].shift();
+                    await pc.addIceCandidate(new RTCIceCandidate(cand)).catch(() => {});
+                }
                 if (signal.sdp.type === 'offer') {
                     const answer = await pc.createAnswer();
                     await pc.setLocalDescription(answer);
                     socket.emit('signal_to_peer', { targetSid: senderSid, signal: { sdp: pc.localDescription } });
                 }
             } else if (signal.candidate) {
-                await pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
+                if (pc.remoteDescription && pc.remoteDescription.type) {
+                    await pc.addIceCandidate(new RTCIceCandidate(signal.candidate)).catch(() => {});
+                } else {
+                    groupIceQueues[senderSid].push(signal.candidate);
+                }
             }
         });
 
@@ -1892,6 +2060,7 @@
             if (groupPeerConnections[sid]) return groupPeerConnections[sid];
             const pc = new RTCPeerConnection(iceServers);
             groupPeerConnections[sid] = pc;
+            groupIceQueues[sid] = [];
 
             pc.onicecandidate = (e) => {
                 if (e.candidate) socket.emit('signal_to_peer', { targetSid: sid, signal: { candidate: e.candidate } });
@@ -1927,6 +2096,7 @@
             if (groupPeerConnections[sid]) {
                 groupPeerConnections[sid].close();
                 delete groupPeerConnections[sid];
+                delete groupIceQueues[sid];
             }
             const card = document.getElementById(`user-card-${sid}`);
             if (card) card.remove();
@@ -1937,6 +2107,7 @@
             const sortedPair = [currentUser, currentTarget].sort();
             activeCallRoomId = "private_call_" + sortedPair[0] + "_" + sortedPair[1];
             isVideoCallMode = false;
+            directIceQueue = [];
 
             document.getElementById('call-modal').style.display = 'flex';
             document.getElementById('call-user-name').innerText = '@' + currentTarget;
@@ -1954,7 +2125,9 @@
                 };
 
                 activeCallPeer.ontrack = e => {
-                    document.getElementById('direct-call-audio').srcObject = e.streams[0];
+                    const audioEl = document.getElementById('direct-call-audio');
+                    audioEl.srcObject = e.streams[0];
+                    audioEl.play().catch(() => {});
                 };
 
                 const offer = await activeCallPeer.createOffer();
@@ -2022,10 +2195,17 @@
                 };
 
                 activeCallPeer.ontrack = e => {
-                    document.getElementById('direct-call-audio').srcObject = e.streams[0];
+                    const audioEl = document.getElementById('direct-call-audio');
+                    audioEl.srcObject = e.streams[0];
+                    audioEl.play().catch(() => {});
                 };
 
                 await activeCallPeer.setRemoteDescription(new RTCSessionDescription(incomingCallData.offer));
+                while (directIceQueue.length > 0) {
+                    const cand = directIceQueue.shift();
+                    await activeCallPeer.addIceCandidate(new RTCIceCandidate(cand)).catch(() => {});
+                }
+
                 const answer = await activeCallPeer.createAnswer();
                 await activeCallPeer.setLocalDescription(answer);
                 socket.emit('call_accept', { target: incomingCallData.caller, answer: answer, isVideo: false });
@@ -2040,11 +2220,23 @@
                 return;
             }
             document.getElementById('call-status-text').innerText = currentLang === 'en' ? 'Connected' : 'Разговор...';
-            if (activeCallPeer && data.answer) await activeCallPeer.setRemoteDescription(new RTCSessionDescription(data.answer));
+            if (activeCallPeer && data.answer) {
+                await activeCallPeer.setRemoteDescription(new RTCSessionDescription(data.answer));
+                while (directIceQueue.length > 0) {
+                    const cand = directIceQueue.shift();
+                    await activeCallPeer.addIceCandidate(new RTCIceCandidate(cand)).catch(() => {});
+                }
+            }
         });
 
         socket.on('call_signal', async (data) => {
-            if (activeCallPeer && data.candidate) await activeCallPeer.addIceCandidate(new RTCIceCandidate(data.candidate));
+            if (data.candidate) {
+                if (activeCallPeer && activeCallPeer.remoteDescription && activeCallPeer.remoteDescription.type) {
+                    await activeCallPeer.addIceCandidate(new RTCIceCandidate(data.candidate)).catch(() => {});
+                } else {
+                    directIceQueue.push(data.candidate);
+                }
+            }
         });
 
         socket.on('call_ended', () => { endCallLocal(); });
@@ -2061,10 +2253,13 @@
             if (directCallStream) directCallStream.getTracks().forEach(t => t.stop());
             if (activeCallPeer) activeCallPeer.close();
             activeCallPeer = null; directCallStream = null; incomingCallData = null; isVideoCallMode = false;
+            directIceQueue = [];
             document.getElementById('call-modal').style.display = 'none';
             document.querySelectorAll('.call-card').forEach(c => c.remove());
             leaveGroupCall();
         }
+
+        // ================= МАФИЯ =================
 
         function openMafiaModal() {
             closeProfileModal();
@@ -2176,7 +2371,7 @@
                 await pc.setLocalDescription(answer);
                 socket.emit('webrtc_signal', { target_sid: senderSid, answer: answer });
             } else if (data.answer) await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
-            else if (data.candidate) await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+            else if (data.candidate) await pc.addIceCandidate(new RTCIceCandidate(data.candidate)).catch(() => {});
         });
 
         function stopMicMeter() {
@@ -2199,8 +2394,8 @@
                 item.className = 'room-item';
                 item.innerHTML = `
                     <div>
-                        <div class="room-title">${rdata.name}</div>
-                        <div class="room-info">${currentLang === 'en' ? 'Players' : 'Игроков'}: ${rdata.count}/6 | ${currentLang === 'en' ? 'Status' : 'Статус'}: ${rdata.state.toUpperCase()}</div>
+                        <div class="room-title">${escapeHtml(rdata.name)}</div>
+                        <div class="room-info">${currentLang === 'en' ? 'Players' : 'Игроков'}: ${rdata.count}/6 | ${currentLang === 'en' ? 'Status' : 'Статус'}: ${escapeHtml(rdata.state.toUpperCase())}</div>
                     </div>
                     <button style="width:auto; padding:6px 14px; margin:0;" onclick="enterMafiaRoom('${rid}')">${currentLang === 'en' ? 'Join' : 'Войти'}</button>
                 `;
@@ -2240,20 +2435,21 @@
                     const p = playerBySlot[s];
                     slotDiv.className = 'table-slot occupied';
                     let actBtn = '';
+                    const safeP = escapeHtml(p.name);
                     if (p.alive && p.name !== currentUser) {
-                        if (data.state === 'night' && mySecretRole === 'mafia') actBtn = `<button class="act-btn" onclick="socket.emit('mafia_action', {room_id:'${activeRoomId}', user:'${currentUser}', target:'${p.name}', action:'kill'})">${currentLang === 'en' ? 'Kill' : 'Убить'}</button>`;
-                        if (data.state === 'day') actBtn = `<button class="act-btn" style="background:#f57c00;" onclick="socket.emit('mafia_action', {room_id:'${activeRoomId}', user:'${currentUser}', target:'${p.name}', action:'vote'})">${currentLang === 'en' ? 'Vote' : 'Голос'}</button>`;
+                        if (data.state === 'night' && mySecretRole === 'mafia') actBtn = `<button class="act-btn" onclick="socket.emit('mafia_action', {room_id:'${activeRoomId}', user:'${escapeHtml(currentUser)}', target:'${safeP}', action:'kill'})">${currentLang === 'en' ? 'Kill' : 'Убить'}</button>`;
+                        if (data.state === 'day') actBtn = `<button class="act-btn" style="background:#f57c00;" onclick="socket.emit('mafia_action', {room_id:'${activeRoomId}', user:'${escapeHtml(currentUser)}', target:'${safeP}', action:'vote'})">${currentLang === 'en' ? 'Vote' : 'Голос'}</button>`;
                     }
                     const avElem = document.createElement('div');
                     avElem.className = 'slot-avatar';
                     setAvatarElement(avElem, p.name);
                     slotDiv.appendChild(avElem);
-                    slotDiv.innerHTML += `
-                        <div class="slot-name">${p.name}</div>
-                        <div class="audio-meter-box" id="meter-box-${p.name}"><div class="audio-meter-bar" id="meter-bar-${p.name}"></div></div>
+                    slotDiv.insertAdjacentHTML('beforeend', `
+                        <div class="slot-name">${safeP}</div>
+                        <div class="audio-meter-box" id="meter-box-${safeP}"><div class="audio-meter-bar" id="meter-bar-${safeP}"></div></div>
                         <div class="slot-status">${p.alive ? (currentLang === 'en' ? '🟢 Alive' : '🟢 Жив') : (currentLang === 'en' ? '💀 Dead' : '💀 Убит')}</div>
                         ${actBtn}
-                    `;
+                    `);
                 } else {
                     slotDiv.className = 'table-slot';
                     slotDiv.innerHTML = `<div class="slot-avatar" style="background:#242f3d; color:#7f91a4;">+</div><div class="slot-name" style="color:#7f91a4;">${currentLang === 'en' ? 'Empty' : 'Свободно'}</div>`;
@@ -2262,7 +2458,7 @@
             }
 
             const lbox = document.getElementById('room-logs-box');
-            lbox.innerHTML = data.logs.join('<br>');
+            lbox.innerHTML = data.logs.map(l => escapeHtml(l)).join('<br>');
             lbox.scrollTop = lbox.scrollHeight;
         });
 
@@ -2312,7 +2508,6 @@
                 ctx.lineTo(canvas.width, y);
                 ctx.stroke();
             }
-            // Неоновый пол
             ctx.shadowBlur = 10;
             ctx.shadowColor = '#3e99e8';
             ctx.strokeStyle = '#3e99e8';
@@ -2364,7 +2559,7 @@
             runnerOrbTimer = 80;
 
             document.getElementById('runner-score').innerText = '0';
-            document.getElementById('runner-start-btn').innerText = '🔄 Заново';
+           document.getElementById('runner-start-btn').innerText = '🔄 Заново';
             document.getElementById('runner-share-btn').style.display = 'none';
 
             if (runnerAnimId) cancelAnimationFrame(runnerAnimId);
@@ -2380,7 +2575,6 @@
             gridOffset = (gridOffset + runnerSpeed * 0.5) % 32;
             drawRunnerGrid(ctx, canvas);
 
-            // Физика игрока
             runnerPlayer.vy += 0.55;
             runnerPlayer.y += runnerPlayer.vy;
             if (runnerPlayer.y >= 146) {
@@ -2389,7 +2583,6 @@
                 runnerPlayer.jumps = 0;
             }
 
-            // Пиксельный шлейф
             runnerTrail.push({ x: runnerPlayer.x + 6, y: runnerPlayer.y + 8, alpha: 0.7 });
             for (let i = runnerTrail.length - 1; i >= 0; i--) {
                 const t = runnerTrail[i];
@@ -2403,13 +2596,11 @@
                 }
             }
 
-            // Ускорение и очки
             runnerSpeed += 0.002;
             runnerScore += 0.2;
             const displayScore = Math.floor(runnerScore);
             document.getElementById('runner-score').innerText = displayScore;
 
-            // Спавн лазерных барьеров
             runnerSpawnTimer--;
             if (runnerSpawnTimer <= 0) {
                 const count = (runnerSpeed > 6.2 && Math.random() > 0.65) ? 2 : 1;
@@ -2420,7 +2611,6 @@
                 runnerSpawnTimer = Math.max(44, Math.floor(92 - runnerSpeed * 4 + Math.random() * 42));
             }
 
-            // Спавн бонусных энерго-сфер
             runnerOrbTimer--;
             if (runnerOrbTimer <= 0) {
                 const orbY = 85 + Math.floor(Math.random() * 55);
@@ -2428,7 +2618,6 @@
                 runnerOrbTimer = 110 + Math.floor(Math.random() * 90);
             }
 
-            // Отрисовка куба игрока
             ctx.shadowBlur = 14;
             ctx.shadowColor = '#3e99e8';
             ctx.fillStyle = '#3e99e8';
@@ -2441,7 +2630,6 @@
             ctx.lineWidth = 1.5;
             ctx.strokeRect(runnerPlayer.x + 3, runnerPlayer.y + 3, runnerPlayer.w - 6, runnerPlayer.h - 6);
 
-            // Энерго-сферы (+25 очков)
             for (let i = runnerOrbs.length - 1; i >= 0; i--) {
                 const orb = runnerOrbs[i];
                 orb.x -= runnerSpeed;
@@ -2464,7 +2652,6 @@
                 if (orb.x + orb.r < 0) runnerOrbs.splice(i, 1);
             }
 
-            // Красные неоновые барьеры
             for (let i = runnerObstacles.length - 1; i >= 0; i--) {
                 const obs = runnerObstacles[i];
                 obs.x -= runnerSpeed;
@@ -2541,7 +2728,10 @@
 
         // ================= АВТОСИНХРОНИЗАЦИЯ СОКЕТА НА ТЕЛЕФОНЕ =================
         socket.on('connect', () => {
-            if (currentUser) {
+            const tok = localStorage.getItem('pychat_token');
+            if (tok && !currentUser) {
+                socket.emit('login_token', { token: tok });
+            } else if (currentUser) {
                 socket.emit('get_users');
                 if (currentTarget) {
                     socket.emit('load_history', { user: currentUser, target: currentTarget });
